@@ -1,4 +1,4 @@
-﻿"""
+"""
 CapCut content pipeline:
 discover -> alert -> draft -> approve -> publish.
 """
@@ -12,13 +12,24 @@ import time
 from datetime import datetime, timezone
 
 import config
+from admin.reporting import (
+    DRAFT_COLUMNS,
+    OPPORTUNITY_COLUMNS,
+    draft_rows,
+    export_dataset,
+    opportunity_rows,
+    render_table,
+)
 from database.db import (
     cleanup_old_rows,
+    fetch_draft_history,
     fetch_top_opportunities,
     get_connection,
     get_existing_slugs,
     get_generated_article,
     get_opportunity,
+    list_generated_articles,
+    list_opportunities,
     mark_article_status,
     record_alert,
     save_generated_article,
@@ -33,14 +44,15 @@ from notifications.telegram_bot import (
     send_article_preview,
     send_opportunity_alert,
     send_status,
-    test_connection,
+    test_connection as test_telegram_connection,
 )
-from publisher.wordpress_client import create_post
+from publisher.wordpress_client import create_post, test_connection as test_wordpress_connection
+from scheduler.windows_task import install_windows_task, write_scheduler_setup
 from sources.competitor_monitor import fetch_competitor_topics
 from sources.seed_monitor import fetch_seed_topics
 from sources.site_inventory import fetch_existing_site_pages
 from sources.trend_monitor import fetch_trend_topics
-from writer.article_generator import generate_article
+from writer.article_generator import generate_article, get_generation_health
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "pending_state.json")
 
@@ -192,18 +204,112 @@ def _clear_pending_state() -> None:
         os.remove(STATE_FILE)
 
 
+def run_service_checks() -> list[dict]:
+    telegram_configured = bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)
+    telegram_ok = test_telegram_connection() if telegram_configured else False
+    checks = [
+        {
+            "service": "telegram",
+            "configured": telegram_configured,
+            "ok": telegram_ok,
+            "detail": "Connected to Telegram bot API" if telegram_ok else (
+                "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID" if not telegram_configured else "Telegram API request failed"
+            ),
+        },
+        test_wordpress_connection(),
+        get_generation_health(),
+    ]
+    return checks
+
+
+def _handle_admin_view(view_name: str, limit: int, fmt: str, output_path: str | None) -> int:
+    conn = get_connection()
+    try:
+        if view_name == "opportunities":
+            rows = opportunity_rows(list_opportunities(conn, limit=limit))
+            columns = OPPORTUNITY_COLUMNS
+            dataset_name = "opportunities"
+        else:
+            rows = draft_rows(fetch_draft_history(conn, limit=limit))
+            columns = DRAFT_COLUMNS
+            dataset_name = "draft_history"
+    finally:
+        conn.close()
+
+    if fmt == "table":
+        print(render_table(rows, columns))
+        return 0
+    path = export_dataset(dataset_name, rows, fmt, output_path)
+    print(f"Saved {view_name} {fmt} view to {path}")
+    return 0
+
+
+def _handle_export(dataset: str, limit: int, fmt: str, output_path: str | None) -> int:
+    conn = get_connection()
+    try:
+        if dataset == "opportunities":
+            rows = opportunity_rows(list_opportunities(conn, limit=limit))
+        elif dataset == "drafts":
+            rows = draft_rows(list_generated_articles(conn, limit=limit))
+        else:
+            rows = draft_rows(fetch_draft_history(conn, limit=limit))
+    finally:
+        conn.close()
+
+    if fmt == "table":
+        columns = OPPORTUNITY_COLUMNS if dataset == "opportunities" else DRAFT_COLUMNS
+        print(render_table(rows, columns))
+        return 0
+
+    dataset_name = "draft_history" if dataset == "history" else dataset
+    path = export_dataset(dataset_name, rows, fmt, output_path)
+    print(f"Exported {dataset_name} to {path}")
+    return 0
+
+
+def _handle_scheduler_setup(install: bool) -> int:
+    setup = write_scheduler_setup(config.SCHEDULER_DIR, config.WINDOWS_TASK_INTERVAL_HOURS)
+    print(f"Run script: {setup['run_script']}")
+    print(f"Install script: {setup['install_script']}")
+    print(f"schtasks command: {setup['command_preview']}")
+    if install:
+        result = install_windows_task(setup["run_script"], setup["interval_hours"])
+        print(result["detail"])
+        return 0 if result["ok"] else 1
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CapCut content alerts pipeline")
     parser.add_argument("--once", action="store_true", help="Run discovery and alert once")
     parser.add_argument("--discover-only", action="store_true", help="Only refresh the opportunity queue")
     parser.add_argument("--handle-updates", action="store_true", help="Only process Telegram callbacks once")
     parser.add_argument("--test", action="store_true", help="Test external service configuration")
+    parser.add_argument("--admin-view", choices=["opportunities", "drafts"], help="Show or export an admin view")
+    parser.add_argument("--export", choices=["opportunities", "drafts", "history"], help="Export queue or draft datasets")
+    parser.add_argument("--format", choices=["table", "json", "csv", "html"], default="table", help="Output format")
+    parser.add_argument("--output", help="Optional output file path for exports or HTML views")
+    parser.add_argument("--limit", type=int, default=50, help="Max records for admin or export commands")
+    parser.add_argument("--write-scheduler-setup", action="store_true", help="Write Windows Task Scheduler helper scripts")
+    parser.add_argument("--install-task-scheduler", action="store_true", help="Create or update the Windows scheduled task")
     args = parser.parse_args()
 
     if args.test:
-        telegram_ok = test_connection()
-        print(f"Telegram configured: {telegram_ok}")
-        return 0
+        checks = run_service_checks()
+        for check in checks:
+            print(
+                f"{check['service'].title()}: configured={check['configured']} ok={check['ok']} detail={check['detail']}"
+            )
+        return 0 if all(check["ok"] or not check["configured"] for check in checks) else 1
+
+    if args.admin_view:
+        return _handle_admin_view(args.admin_view, args.limit, args.format, args.output)
+
+    if args.export:
+        return _handle_export(args.export, args.limit, args.format, args.output)
+
+    if args.write_scheduler_setup or args.install_task_scheduler:
+        return _handle_scheduler_setup(install=args.install_task_scheduler)
 
     if args.discover_only:
         discovered = run_discovery()

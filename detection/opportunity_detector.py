@@ -1,11 +1,12 @@
-﻿"""
+"""
 Convert mixed source signals into ranked article opportunities.
 """
 from __future__ import annotations
 
 import hashlib
+import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import config
 
@@ -45,8 +46,8 @@ def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dic
                 "status": "new",
             }
         )
-    opportunities.sort(key=lambda item: (-item["score"], item["query"]))
-    return opportunities[: config.MAX_OPPORTUNITIES_PER_RUN]
+
+    return _select_diverse_opportunities(opportunities)
 
 
 def suggest_title(query: str, bucket: str) -> str:
@@ -87,6 +88,45 @@ def _score_topic(query: str, items: list[dict], bucket: str) -> int:
             keyword_bonus += 3
     strategic = config.STRATEGIC_BUCKET_BOOSTS.get(bucket, 6)
     return min(base + source_weight + freshness + keyword_bonus + strategic, 100)
+
+
+def _select_diverse_opportunities(opportunities: list[dict]) -> list[dict]:
+    if not opportunities:
+        return []
+
+    limit = config.MAX_OPPORTUNITIES_PER_RUN
+    comparison_cap = max(1, math.ceil(limit * config.MAX_COMPARISON_SHARE))
+    bucket_cap = max(2, math.ceil(limit * config.MAX_BUCKET_SHARE))
+
+    pool = sorted(opportunities, key=lambda item: (-item["score"], item["query"]))
+    bucket_counts: Counter[str] = Counter()
+    selected: list[dict] = []
+    remaining = list(pool)
+
+    while remaining and len(selected) < limit:
+        ranked = sorted(
+            remaining,
+            key=lambda item: (
+                -(item["score"] - bucket_counts[item["bucket"]] * config.DIVERSITY_PENALTY_PER_BUCKET),
+                bucket_counts[item["bucket"]],
+                item["query"],
+            ),
+        )
+        picked = None
+        for item in ranked:
+            bucket = item["bucket"]
+            max_for_bucket = comparison_cap if bucket == "comparison" else bucket_cap
+            if bucket_counts[bucket] >= max_for_bucket:
+                continue
+            picked = item
+            break
+        if picked is None:
+            break
+        selected.append(picked)
+        bucket_counts[picked["bucket"]] += 1
+        remaining = [item for item in remaining if item["topic_key"] != picked["topic_key"]]
+
+    return selected
 
 
 def _classify(query: str) -> str:

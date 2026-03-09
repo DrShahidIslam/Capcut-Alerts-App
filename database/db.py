@@ -1,4 +1,4 @@
-﻿"""
+"""
 SQLite helpers for topic discovery, alert tracking, and pending drafts.
 """
 from __future__ import annotations
@@ -54,6 +54,15 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS article_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic_key TEXT NOT NULL,
+            article_json TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            wordpress_post_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
         """
     )
     conn.commit()
@@ -88,6 +97,7 @@ def upsert_opportunity(conn: sqlite3.Connection, topic: dict) -> None:
         ON CONFLICT(topic_key) DO UPDATE SET
             topic_json = excluded.topic_json,
             score = excluded.score,
+            status = excluded.status,
             updated_at = excluded.updated_at
         """,
         (
@@ -104,7 +114,7 @@ def upsert_opportunity(conn: sqlite3.Connection, topic: dict) -> None:
 def fetch_top_opportunities(conn: sqlite3.Connection, limit: int = 10, min_score: int = 0) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT topic_json
+        SELECT topic_json, score, status, created_at, updated_at
         FROM opportunities
         WHERE score >= ?
           AND status IN ('new')
@@ -113,15 +123,28 @@ def fetch_top_opportunities(conn: sqlite3.Connection, limit: int = 10, min_score
         """,
         (min_score, limit),
     ).fetchall()
-    return [json.loads(row["topic_json"]) for row in rows]
+    return [_merge_db_metadata(row, "topic_json") for row in rows]
+
+
+def list_opportunities(conn: sqlite3.Connection, limit: int = 100, statuses: tuple[str, ...] | None = None) -> list[dict]:
+    query = "SELECT topic_json, score, status, created_at, updated_at FROM opportunities"
+    params: list[object] = []
+    if statuses:
+        placeholders = ", ".join("?" for _ in statuses)
+        query += f" WHERE status IN ({placeholders})"
+        params.extend(statuses)
+    query += " ORDER BY score DESC, updated_at DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [_merge_db_metadata(row, "topic_json") for row in rows]
 
 
 def get_opportunity(conn: sqlite3.Connection, topic_key: str) -> dict | None:
     row = conn.execute(
-        "SELECT topic_json FROM opportunities WHERE topic_key = ?",
+        "SELECT topic_json, score, status, created_at, updated_at FROM opportunities WHERE topic_key = ?",
         (topic_key,),
     ).fetchone()
-    return json.loads(row["topic_json"]) if row else None
+    return _merge_db_metadata(row, "topic_json") if row else None
 
 
 def update_opportunity_status(conn: sqlite3.Connection, topic_key: str, status: str) -> None:
@@ -146,6 +169,7 @@ def record_alert(conn: sqlite3.Connection, topic_key: str, message_id: str | int
 
 def save_generated_article(conn: sqlite3.Connection, topic_key: str, article: dict, status: str = "pending") -> None:
     payload = json.dumps(article, ensure_ascii=False)
+    now = _now_iso()
     conn.execute(
         """
         INSERT INTO generated_articles (topic_key, article_json, status, updated_at)
@@ -155,17 +179,47 @@ def save_generated_article(conn: sqlite3.Connection, topic_key: str, article: di
             status = excluded.status,
             updated_at = excluded.updated_at
         """,
-        (topic_key, payload, status, _now_iso()),
+        (topic_key, payload, status, now),
+    )
+    conn.execute(
+        "INSERT INTO article_history (topic_key, article_json, status, created_at) VALUES (?, ?, ?, ?)",
+        (topic_key, payload, status, now),
     )
     conn.commit()
 
 
 def get_generated_article(conn: sqlite3.Connection, topic_key: str) -> dict | None:
     row = conn.execute(
-        "SELECT article_json FROM generated_articles WHERE topic_key = ?",
+        "SELECT article_json, status, wordpress_post_id, created_at, updated_at FROM generated_articles WHERE topic_key = ?",
         (topic_key,),
     ).fetchone()
-    return json.loads(row["article_json"]) if row else None
+    return _merge_db_metadata(row, "article_json") if row else None
+
+
+def list_generated_articles(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT article_json, status, wordpress_post_id, created_at, updated_at
+        FROM generated_articles
+        ORDER BY updated_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [_merge_db_metadata(row, "article_json") for row in rows]
+
+
+def fetch_draft_history(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT article_json, status, wordpress_post_id, created_at
+        FROM article_history
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [_merge_db_metadata(row, "article_json") for row in rows]
 
 
 def mark_article_status(
@@ -174,17 +228,27 @@ def mark_article_status(
     status: str,
     wordpress_post_id: int | None = None,
 ) -> None:
+    now = _now_iso()
     conn.execute(
         """
         UPDATE generated_articles
         SET status = ?, wordpress_post_id = COALESCE(?, wordpress_post_id), updated_at = ?
         WHERE topic_key = ?
         """,
-        (status, wordpress_post_id, _now_iso(), topic_key),
+        (status, wordpress_post_id, now, topic_key),
     )
+    row = conn.execute(
+        "SELECT article_json FROM generated_articles WHERE topic_key = ?",
+        (topic_key,),
+    ).fetchone()
+    if row:
+        conn.execute(
+            "INSERT INTO article_history (topic_key, article_json, status, wordpress_post_id, created_at) VALUES (?, ?, ?, ?, ?)",
+            (topic_key, row["article_json"], status, wordpress_post_id, now),
+        )
     conn.execute(
         "UPDATE opportunities SET status = ?, updated_at = ? WHERE topic_key = ?",
-        (status, _now_iso(), topic_key),
+        (status, now, topic_key),
     )
     conn.commit()
 
@@ -195,6 +259,16 @@ def cleanup_old_rows(conn: sqlite3.Connection, days: int = 30) -> None:
     conn.execute("DELETE FROM alerts WHERE sent_at < ?", (cutoff_iso,))
     conn.execute("DELETE FROM opportunities WHERE updated_at < ? AND status IN ('rejected', 'published')", (cutoff_iso,))
     conn.commit()
+
+
+def _merge_db_metadata(row: sqlite3.Row | None, payload_key: str) -> dict:
+    if row is None:
+        return {}
+    payload = json.loads(row[payload_key])
+    for field in ("score", "status", "created_at", "updated_at", "wordpress_post_id"):
+        if field in row.keys() and row[field] is not None:
+            payload[field] = row[field]
+    return payload
 
 
 def _now_iso() -> str:

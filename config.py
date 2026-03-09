@@ -1,4 +1,4 @@
-﻿"""
+"""
 Central configuration for the CapCut content pipeline.
 """
 from __future__ import annotations
@@ -34,6 +34,9 @@ SCAN_INTERVAL_MINUTES = int(os.getenv("SCAN_INTERVAL_MINUTES", "180"))
 MAX_ALERTS_PER_RUN = int(os.getenv("MAX_ALERTS_PER_RUN", "5"))
 MAX_OPPORTUNITIES_PER_RUN = int(os.getenv("MAX_OPPORTUNITIES_PER_RUN", "25"))
 MIN_OPPORTUNITY_SCORE = int(os.getenv("MIN_OPPORTUNITY_SCORE", "35"))
+MAX_BUCKET_SHARE = float(os.getenv("MAX_BUCKET_SHARE", "0.4"))
+MAX_COMPARISON_SHARE = float(os.getenv("MAX_COMPARISON_SHARE", "0.24"))
+DIVERSITY_PENALTY_PER_BUCKET = int(os.getenv("DIVERSITY_PENALTY_PER_BUCKET", "5"))
 
 KEYWORD_EXPANSION_TERMS = [
     "apk",
@@ -117,6 +120,13 @@ RSS_FEEDS = [
 ARTICLE_MIN_WORDS = int(os.getenv("ARTICLE_MIN_WORDS", "1200"))
 ARTICLE_MAX_WORDS = int(os.getenv("ARTICLE_MAX_WORDS", "2200"))
 ARTICLE_TONE = os.getenv("ARTICLE_TONE", "helpful, practical, and SEO-focused")
+DEFAULT_FOCUS_KEYWORD_COUNT = int(os.getenv("DEFAULT_FOCUS_KEYWORD_COUNT", "5"))
+
+REPORTS_DIR = os.getenv("REPORTS_DIR", os.path.join("data", "reports"))
+EXPORTS_DIR = os.getenv("EXPORTS_DIR", os.path.join("data", "exports"))
+SCHEDULER_DIR = os.getenv("SCHEDULER_DIR", os.path.join("data", "scheduler"))
+WINDOWS_TASK_NAME = os.getenv("WINDOWS_TASK_NAME", "CapCut Content Alerts")
+WINDOWS_TASK_INTERVAL_HOURS = int(os.getenv("WINDOWS_TASK_INTERVAL_HOURS", "3"))
 
 EXISTING_SITE_URLS = [
     "https://capcutpro-apks.com/",

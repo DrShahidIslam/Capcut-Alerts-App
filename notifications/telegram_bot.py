@@ -1,10 +1,11 @@
-﻿"""
+"""
 Telegram utilities for alerts, previews, and approval actions.
 """
 from __future__ import annotations
 
 import json
 import logging
+import time
 
 import requests
 
@@ -54,9 +55,12 @@ def send_article_preview(article: dict) -> int | None:
         "CapCut article ready for review\n"
         "------------------------------\n"
         f"Title: {article['title']}\n"
+        f"Meta title: {article.get('meta_title', '')}\n"
         f"Slug: {article['slug']}\n"
         f"Words: {article['word_count']}\n"
-        f"Meta: {article['meta_description']}\n\n"
+        f"Meta description: {article['meta_description']}\n"
+        f"Focus keywords: {', '.join(article.get('focus_keywords', []))}\n"
+        f"FAQ schema: {article.get('faq_count', 0)} items\n\n"
         f"{preview}"
     )
     return _send_message(text[:3900], reply_markup=keyboard)
@@ -117,21 +121,31 @@ def _post(method: str, data: dict) -> dict | None:
     if not base_url:
         logger.info("Telegram is not configured; skipping message: %s", method)
         return None
-    try:
-        response = requests.post(f"{base_url}/{method}", data=data, timeout=20)
-        return response.json()
-    except Exception as exc:
-        logger.warning("Telegram call failed for %s: %s", method, exc)
-        return None
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = requests.post(f"{base_url}/{method}", data=data, timeout=20)
+            return response.json()
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Telegram call failed for %s on attempt %s: %s", method, attempt + 1, exc)
+            time.sleep(1 + attempt)
+    logger.warning("Telegram call failed for %s after retries: %s", method, last_error)
+    return None
 
 
 def _get(method: str) -> dict | None:
     base_url = _base_url()
     if not base_url:
         return None
-    try:
-        response = requests.get(f"{base_url}/{method}", timeout=20)
-        return response.json()
-    except Exception as exc:
-        logger.warning("Telegram call failed for %s: %s", method, exc)
-        return None
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = requests.get(f"{base_url}/{method}", timeout=20)
+            return response.json()
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Telegram call failed for %s on attempt %s: %s", method, attempt + 1, exc)
+            time.sleep(1 + attempt)
+    logger.warning("Telegram call failed for %s after retries: %s", method, last_error)
+    return None
