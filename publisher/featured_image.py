@@ -1,4 +1,4 @@
-﻿"""Simple featured image generator (PNG) with no external dependencies.
+"""Simple featured image generator (PNG) with no external dependencies.
 
 We keep this intentionally lightweight so the pipeline can always attach *some* image
 (even when AI generation is unavailable).
@@ -6,6 +6,7 @@ We keep this intentionally lightweight so the pipeline can always attach *some* 
 
 from __future__ import annotations
 
+import re
 import struct
 import zlib
 
@@ -16,6 +17,8 @@ FONT_5X7: dict[str, list[str]] = {
     " ": ["00000"] * 7,
     "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
     ":": ["00000", "00100", "00100", "00000", "00100", "00100", "00000"],
+    ".": ["00000", "00000", "00000", "00000", "00000", "00100", "00100"],
+    "/": ["00001", "00010", "00100", "01000", "10000", "00000", "00000"],
     "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
     "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
     "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
@@ -54,18 +57,35 @@ FONT_5X7: dict[str, list[str]] = {
     "Z": ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
 }
 
+APP_TAGLINES = {
+    "capcut": "TEMPLATES",
+    "inshot": "SIMPLE EDITS",
+    "vn": "DESIGN",
+    "canva": "DESIGN",
+    "kinemaster": "PRO EDITS",
+    "alight motion": "MOTION",
+    "premiere rush": "ADOBE",
+    "filmora": "EASY FX",
+}
+
+APP_COLORS = [
+    (46, 171, 255),
+    (255, 170, 58),
+    (108, 233, 190),
+]
+
 
 def render_featured_image_png(title: str, width: int = 1200, height: int = 630) -> bytes:
     """Return PNG bytes for a simple featured image with the given title."""
 
     safe_title = (title or "CapCut Guide").strip()
-    text = _to_font_text(safe_title)
+    entities = _extract_entities(safe_title)
 
     pixels = bytearray(width * height * 4)
 
     # Background gradient.
-    top = (14, 32, 52)
-    bottom = (10, 72, 80)
+    top = (12, 32, 50)
+    bottom = (6, 90, 86)
     for y in range(height):
         t = y / max(1, height - 1)
         r = int(top[0] + (bottom[0] - top[0]) * t)
@@ -77,10 +97,109 @@ def render_featured_image_png(title: str, width: int = 1200, height: int = 630) 
     # Diagonal accent stripes.
     for y in range(height):
         for x in range(width):
-            if ((x + y) % 120) < 10:
-                _blend_px(pixels, width, x, y, 255, 255, 255, 24)
+            if ((x + y) % 140) < 10:
+                _blend_px(pixels, width, x, y, 255, 255, 255, 18)
 
-    # Title block.
+    if len(entities) >= 2:
+        _draw_comparison_layout(pixels, width, height, entities)
+    else:
+        _draw_title_layout(pixels, width, height, safe_title)
+
+    return _encode_png_rgba(width, height, bytes(pixels))
+
+
+def _extract_entities(title: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", title.strip())
+    normalized = re.sub(r"\bversus\b", "vs", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bvs\.\b", "vs", normalized, flags=re.IGNORECASE)
+    parts = [part.strip(" -:|\t").strip() for part in re.split(r"\bvs\b", normalized, flags=re.IGNORECASE) if part.strip()]
+
+    canon = {
+        "capcut": "CapCut",
+        "inshot": "InShot",
+        "canva": "Canva",
+        "vn": "VN",
+        "kinemaster": "KineMaster",
+        "alight motion": "Alight Motion",
+        "premiere rush": "Premiere Rush",
+        "filmora": "Filmora",
+    }
+
+    cleaned: list[str] = []
+    seen = set()
+    for raw in parts:
+        simple = re.sub(r"\s+", " ", raw.lower()).strip()
+        name = canon.get(simple) or raw.strip().title()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(name)
+
+    if not cleaned:
+        cleaned = ["CapCut"]
+
+    if any(name.lower() == "capcut" for name in cleaned) and cleaned[0].lower() != "capcut":
+        cleaned = ["CapCut"] + [name for name in cleaned if name.lower() != "capcut"]
+
+    return cleaned
+
+
+def _draw_comparison_layout(pixels: bytearray, width: int, height: int, entities: list[str]) -> None:
+    margin = 60
+    gap = 26
+    entities = entities[:3]
+    header = " VS ".join(entities)
+
+    badge_w = 320
+    badge_h = 54
+    _fill_rect(pixels, width, 40, 36, badge_w, badge_h, 18, 34, 52, 210)
+    _stroke_rect(pixels, width, 40, 36, badge_w, badge_h, 255, 255, 255, 70)
+    _draw_text(pixels, width, height, 62, 52, "COMPARISON GUIDE", 5, (255, 255, 255, 210))
+
+    title_text = _to_font_text(header)
+    lines = _wrap_text(title_text, max_pixels=int(width * 0.84), scale=9)
+    start_y = 120
+    for idx, line in enumerate(lines[:2]):
+        line_w = _measure_text_pixels(line, 9)
+        x = max(40, (width - line_w) // 2)
+        y = start_y + idx * (7 * 9 + 10)
+        _draw_text(pixels, width, height, x + 3, y + 3, line, 9, (0, 0, 0, 140))
+        _draw_text(pixels, width, height, x, y, line, 9, (255, 255, 255, 235))
+
+    card_y = height - 210
+    card_h = 150
+    card_w = int((width - margin * 2 - gap * (len(entities) - 1)) / max(1, len(entities)))
+
+    for idx, name in enumerate(entities):
+        x = margin + idx * (card_w + gap)
+        color = APP_COLORS[idx % len(APP_COLORS)]
+        _fill_rect(pixels, width, x, card_y, card_w, card_h, color[0], color[1], color[2], 200)
+        _stroke_rect(pixels, width, x, card_y, card_w, card_h, 255, 255, 255, 90)
+
+        label = _to_font_text(name)
+        label_scale = 8
+        label_w = _measure_text_pixels(label, label_scale)
+        label_x = x + max(16, (card_w - label_w) // 2)
+        label_y = card_y + 28
+        _draw_text(pixels, width, height, label_x + 2, label_y + 2, label, label_scale, (0, 0, 0, 120))
+        _draw_text(pixels, width, height, label_x, label_y, label, label_scale, (255, 255, 255, 235))
+
+        key = name.lower()
+        tagline = APP_TAGLINES.get(key, "EDITOR")
+        tagline_scale = 5
+        tag_text = _to_font_text(tagline)
+        tag_w = _measure_text_pixels(tag_text, tagline_scale)
+        tag_x = x + max(16, (card_w - tag_w) // 2)
+        tag_y = card_y + 92
+        _draw_text(pixels, width, height, tag_x, tag_y, tag_text, tagline_scale, (255, 255, 255, 220))
+
+
+def _draw_title_layout(pixels: bytearray, width: int, height: int, title: str) -> None:
+    text = _to_font_text(title)
+
     max_text_width = int(width * 0.84)
     scale = 10
     lines = _wrap_text(text, max_pixels=max_text_width, scale=scale)
@@ -97,7 +216,7 @@ def render_featured_image_png(title: str, width: int = 1200, height: int = 630) 
         # Foreground.
         _draw_text(pixels, width, height, x, y, line, scale, (255, 255, 255, 235))
 
-    return _encode_png_rgba(width, height, bytes(pixels))
+    _draw_text(pixels, width, height, 52, height - 70, "CAPCUT GUIDE", 5, (255, 255, 255, 190))
 
 
 def _to_font_text(value: str) -> str:
@@ -175,6 +294,27 @@ def _draw_text(pixels: bytearray, width: int, height: int, x: int, y: int, text:
                             continue
                         _blend_px(pixels, width, xx, yy, r, g, b, a)
         cursor += 6 * scale
+
+
+def _fill_rect(pixels: bytearray, width: int, x: int, y: int, w: int, h: int, r: int, g: int, b: int, a: int) -> None:
+    for yy in range(y, y + h):
+        if yy < 0:
+            continue
+        if yy >= 0 and yy >= (len(pixels) // (width * 4)):
+            break
+        for xx in range(x, x + w):
+            if xx < 0 or xx >= width:
+                continue
+            _blend_px(pixels, width, xx, yy, r, g, b, a)
+
+
+def _stroke_rect(pixels: bytearray, width: int, x: int, y: int, w: int, h: int, r: int, g: int, b: int, a: int) -> None:
+    for xx in range(x, x + w):
+        _blend_px(pixels, width, xx, y, r, g, b, a)
+        _blend_px(pixels, width, xx, y + h - 1, r, g, b, a)
+    for yy in range(y, y + h):
+        _blend_px(pixels, width, x, yy, r, g, b, a)
+        _blend_px(pixels, width, x + w - 1, yy, r, g, b, a)
 
 
 def _set_px(pixels: bytearray, width: int, x: int, y: int, r: int, g: int, b: int, a: int) -> None:

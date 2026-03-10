@@ -1,4 +1,4 @@
-﻿"""
+"""
 Competitor sitemap and RSS topic extraction.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _fetch_topics_from_sitemap(sitemap_url: str) -> list[dict]:
             namespace = root.tag.split("}")[0] + "}"
         for loc in root.findall(f".//{namespace}loc"):
             url = (loc.text or "").strip()
-            if "capcut" not in url.lower():
+            if not _is_relevant_url(url):
                 continue
             slug = urlparse(url).path.strip("/").replace("-", " ")
             if slug:
@@ -47,6 +47,7 @@ def _fetch_topics_from_sitemap(sitemap_url: str) -> list[dict]:
                         "source": "competitor_sitemap",
                         "signals": ["competitor-covered"],
                         "freshness": 0.65,
+                        "volume": 0,
                     }
                 )
     except Exception as exc:
@@ -62,8 +63,7 @@ def _fetch_topics_from_feed(feed_url: str) -> list[dict]:
             title = re.sub(r"\s+", " ", getattr(entry, "title", "")).strip()
             if not title:
                 continue
-            lower = title.lower()
-            if "capcut" not in lower and "video editing" not in lower:
+            if not _is_relevant_title(title):
                 continue
             topics.append(
                 {
@@ -71,8 +71,35 @@ def _fetch_topics_from_feed(feed_url: str) -> list[dict]:
                     "source": "news_feed",
                     "signals": ["fresh-news"],
                     "freshness": 0.9,
+                    "volume": 0,
                 }
             )
     except Exception as exc:
         logger.debug("Feed parse failed for %s: %s", feed_url, exc)
     return topics
+
+
+def _is_relevant_url(url: str) -> bool:
+    if not url:
+        return False
+    lower = url.lower()
+    if "capcut" in lower:
+        return True
+    return _contains_any_keyword(lower)
+
+
+def _is_relevant_title(title: str) -> bool:
+    lower = title.lower()
+    if "capcut" in lower or "video editing" in lower:
+        return True
+    return _contains_any_keyword(lower)
+
+
+def _contains_any_keyword(text: str) -> bool:
+    for term in config.KEYWORD_EXPANSION_TERMS:
+        if term in text:
+            return True
+    for app in config.COMPARISON_TARGETS:
+        if app.lower() in text:
+            return True
+    return False

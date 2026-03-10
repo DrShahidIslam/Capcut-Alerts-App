@@ -11,6 +11,9 @@ from collections import Counter, defaultdict
 import config
 
 
+NON_COMPARISON_BUCKETS = {"how_to", "fix", "trend", "safety", "download"}
+
+
 def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dict]]) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for bundle in source_bundles:
@@ -41,6 +44,7 @@ def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dic
                 "sources": sorted({item["source"] for item in items}),
                 "signals": sorted({signal for item in items for signal in item.get("signals", [])}),
                 "freshness": round(sum(item.get("freshness", 0.5) for item in items) / len(items), 2),
+                "volume": _aggregate_volume(items),
                 "title": suggest_title(canonical_query, bucket),
                 "brief": build_brief(canonical_query, bucket, items),
                 "status": "new",
@@ -68,26 +72,51 @@ def suggest_title(query: str, bucket: str) -> str:
 def build_brief(query: str, bucket: str, items: list[dict]) -> str:
     competitor = any("competitor-covered" in item.get("signals", []) for item in items)
     trend = any("rising" in item.get("signals", []) or "fresh-news" in item.get("signals", []) for item in items)
+    momentum = any("momentum" in item.get("signals", []) for item in items)
+    volume = _aggregate_volume(items)
     parts = [f"Primary angle: {bucket.replace('_', ' ')}."]
     if competitor:
         parts.append("Competitors are already covering related demand.")
     if trend:
         parts.append("Include a timely update section for current search intent.")
+    if momentum:
+        parts.append("Recent trend momentum detected; highlight what's driving interest.")
+    if volume:
+        parts.append(f"Search volume signal detected (score: {volume}).")
     parts.append("Answer search intent fast, compare alternatives honestly, and add internal links to existing CapCut posts.")
     return " ".join(parts)
 
 
+def _aggregate_volume(items: list[dict]) -> int:
+    volumes = [int(item.get("volume", 0)) for item in items if str(item.get("volume", "")).isdigit()]
+    if not volumes:
+        return 0
+    return int(sum(volumes) / len(volumes))
+
+
 def _score_topic(query: str, items: list[dict], bucket: str) -> int:
-    base = 20
-    source_weight = len({item["source"] for item in items}) * 7
-    freshness = int(sum(item.get("freshness", 0.5) for item in items) / len(items) * 20)
+    base = 22
+    source_weight = len({item["source"] for item in items}) * 8
+    freshness = int(sum(item.get("freshness", 0.5) for item in items) / len(items) * 22)
     keyword_bonus = 0
     lower = query.lower()
     for term in config.KEYWORD_EXPANSION_TERMS:
         if term in lower:
             keyword_bonus += 3
+
+    volume_signal = _aggregate_volume(items)
+    volume_bonus = 0
+    if volume_signal >= 60:
+        volume_bonus = 12
+    elif volume_signal >= 30:
+        volume_bonus = 8
+    elif volume_signal >= 10:
+        volume_bonus = 4
+
+    momentum_bonus = 6 if any("momentum" in item.get("signals", []) for item in items) else 0
+
     strategic = config.STRATEGIC_BUCKET_BOOSTS.get(bucket, 6)
-    return min(base + source_weight + freshness + keyword_bonus + strategic, 100)
+    return min(base + source_weight + freshness + keyword_bonus + volume_bonus + momentum_bonus + strategic, 100)
 
 
 def _select_diverse_opportunities(opportunities: list[dict]) -> list[dict]:
@@ -101,7 +130,19 @@ def _select_diverse_opportunities(opportunities: list[dict]) -> list[dict]:
     pool = sorted(opportunities, key=lambda item: (-item["score"], item["query"]))
     bucket_counts: Counter[str] = Counter()
     selected: list[dict] = []
-    remaining = list(pool)
+
+    # Ensure at least one from each non-comparison bucket when available.
+    for bucket in NON_COMPARISON_BUCKETS:
+        bucket_items = [item for item in pool if item["bucket"] == bucket]
+        if not bucket_items:
+            continue
+        picked = bucket_items[0]
+        if picked in selected:
+            continue
+        selected.append(picked)
+        bucket_counts[bucket] += 1
+
+    remaining = [item for item in pool if item not in selected]
 
     while remaining and len(selected) < limit:
         ranked = sorted(
