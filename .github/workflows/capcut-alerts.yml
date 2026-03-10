@@ -1,0 +1,67 @@
+name: CapCut Alerts
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */3 * * *"
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: "INFO"
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      WP_URL: ${{ secrets.WP_URL }}
+      WP_USERNAME: ${{ secrets.WP_USERNAME }}
+      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+      SITE_NAME: ${{ secrets.SITE_NAME }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      SITE_LANGUAGE: ${{ secrets.SITE_LANGUAGE }}
+      SITE_COUNTRY: ${{ secrets.SITE_COUNTRY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            agent.db
+            agent.log
+            pending_state.json
+            data
+          key: capcut-alerts-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            capcut-alerts-${{ github.ref_name }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run discovery and alerts
+        run: python main.py --once
+
+      - name: Handle Telegram callbacks
+        run: python main.py --handle-updates
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capcut-alerts-logs
+          path: |
+            agent.log
+            pending_state.json
+            data/reports
+            data/exports
