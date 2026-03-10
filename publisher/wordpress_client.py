@@ -90,7 +90,18 @@ def create_post(article: dict, status: str | None = None) -> dict | None:
         payload["meta"] = meta
 
     try:
-        response = _request("POST", endpoint, json=payload, timeout=30)\n        if response.status_code >= 300 and "meta" in payload:\n            logger.info("Post create rejected with meta; retrying without RankMath meta. HTTP %s", response.status_code)\n            retry_payload = {key: value for key, value in payload.items() if key != "meta"}\n            response = _request("POST", endpoint, json=retry_payload, timeout=30)\n        if response.status_code >= 300:\n            logger.warning("WordPress rejected post: %s %s", response.status_code, response.text[:500])\n            return None\n        return response.json()
+        response = _request("POST", endpoint, json=payload, timeout=30)
+        if response.status_code >= 300 and "meta" in payload:
+            logger.info(
+                "Post create rejected with meta; retrying without RankMath meta. HTTP %s",
+                response.status_code,
+            )
+            retry_payload = {key: value for key, value in payload.items() if key != "meta"}
+            response = _request("POST", endpoint, json=retry_payload, timeout=30)
+        if response.status_code >= 300:
+            logger.warning("WordPress rejected post: %s %s", response.status_code, response.text[:500])
+            return None
+        return response.json()
     except Exception as exc:
         logger.warning("WordPress publish failed: %s", exc)
         return None
