@@ -38,6 +38,10 @@ MAX_BUCKET_SHARE = float(os.getenv("MAX_BUCKET_SHARE", "0.4"))
 MAX_COMPARISON_SHARE = float(os.getenv("MAX_COMPARISON_SHARE", "0.24"))
 DIVERSITY_PENALTY_PER_BUCKET = int(os.getenv("DIVERSITY_PENALTY_PER_BUCKET", "5"))
 
+# When running with --once, keep the process alive to handle Telegram callbacks
+# (generate/approve/publish) before exiting.
+ONCE_REPLY_WINDOW_SECONDS = int(os.getenv("ONCE_REPLY_WINDOW_SECONDS", "420"))  # 7 minutes
+TELEGRAM_POLL_INTERVAL_SECONDS = int(os.getenv("TELEGRAM_POLL_INTERVAL_SECONDS", "5"))
 KEYWORD_EXPANSION_TERMS = [
     "apk",
     "mod apk",

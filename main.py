@@ -1,4 +1,4 @@
-﻿"""
+"""
 CapCut content pipeline:
 discover -> alert -> draft -> approve -> publish.
 """
@@ -69,6 +69,56 @@ logger = logging.getLogger("CapCutPipeline")
 
 _update_offset = None
 
+TELEGRAM_STATE_FILE = os.path.join(os.path.dirname(__file__), "telegram_state.json")
+
+
+def _load_telegram_update_offset() -> int | None:
+    try:
+        if not os.path.exists(TELEGRAM_STATE_FILE):
+            return None
+        with open(TELEGRAM_STATE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        value = payload.get("update_offset")
+        return int(value) if value is not None else None
+    except Exception as exc:
+        logger.warning("Failed reading Telegram state file: %s", exc)
+        return None
+
+_update_offset = _load_telegram_update_offset()  # persisted across runs
+
+
+def _save_telegram_update_offset(offset: int) -> None:
+    try:
+        payload = {
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+            "update_offset": int(offset),
+        }
+        with open(TELEGRAM_STATE_FILE, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.warning("Failed writing Telegram state file: %s", exc)
+
+
+def _seed_update_offset_to_latest() -> None:
+    """Initialize offset so we only process fresh callbacks in this run."""
+    global _update_offset
+    if _update_offset is not None:
+        return
+    updates = get_updates()
+    if updates:
+        _update_offset = updates[-1]["update_id"] + 1
+        _save_telegram_update_offset(_update_offset)
+
+
+def run_reply_window(duration_seconds: int) -> None:
+    if duration_seconds <= 0:
+        return
+    deadline = time.monotonic() + duration_seconds
+    logger.info("Waiting up to %s seconds for Telegram callbacks", duration_seconds)
+    while time.monotonic() < deadline:
+        handle_updates()
+        time.sleep(max(1, int(getattr(config, "TELEGRAM_POLL_INTERVAL_SECONDS", 5))))
+
 
 def run_discovery() -> list[dict]:
     logger.info("Starting CapCut opportunity discovery")
@@ -108,6 +158,7 @@ def send_top_alerts() -> int:
 
 def handle_updates() -> None:
     global _update_offset
+    previous_offset = _update_offset
     updates = get_updates(offset=_update_offset)
     if not updates:
         return
@@ -133,6 +184,9 @@ def handle_updates() -> None:
             _handle_reject(topic_key)
         elif action == "ignore":
             _handle_ignore(topic_key)
+
+    if _update_offset is not None and _update_offset != previous_offset:
+        _save_telegram_update_offset(_update_offset)
 
 
 def _handle_generate(topic_key: str) -> None:
@@ -332,9 +386,11 @@ def main() -> int:
         return 0
 
     if args.once:
+        _seed_update_offset_to_latest()
         discovered = run_discovery()
         sent = send_top_alerts()
         print(f"Discovered {len(discovered)} opportunities and sent {sent} alerts")
+        run_reply_window(getattr(config, "ONCE_REPLY_WINDOW_SECONDS", 420))
         return 0
 
     while True:
@@ -347,8 +403,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-
