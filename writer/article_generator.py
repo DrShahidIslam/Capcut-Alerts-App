@@ -1,4 +1,4 @@
-"""
+ï»¿"""
 Generate article drafts for approved CapCut opportunities.
 """
 from __future__ import annotations
@@ -217,12 +217,14 @@ def _normalize_article(article: dict, opportunity: dict, internal_links: list[di
     content = _cleanup_html(article.get("content") or "")
     if not content:
         content = _build_template_article(opportunity, internal_links)["content"]
-    if internal_links and "<a " not in content:
-        content = content.replace(
-            "<h2>Conclusion</h2>",
-            _build_related_links_section(internal_links[:3]) + "<h2>Conclusion</h2>",
-            1,
-        )
+    if internal_links:
+        link_count = content.count("<a ")
+        if link_count < 3:
+            insert = _build_related_links_section(internal_links[:5])
+            if "<h2>Conclusion</h2>" in content:
+                content = content.replace("<h2>Conclusion</h2>", insert + "<h2>Conclusion</h2>", 1)
+            else:
+                content = f"{content}{insert}"
 
     faqs = _extract_faqs_from_html(content)
     faq_schema = _build_faq_schema(faqs) if faqs else ""
@@ -254,10 +256,20 @@ def _normalize_article(article: dict, opportunity: dict, internal_links: list[di
 
 def _select_internal_links(existing_pages: list[dict], query: str, limit: int = 6) -> list[dict]:
     query_tokens = _keyword_tokens(query)
+    site_netloc = urlparse(config.SITE_URL).netloc.lower().lstrip("www.")
     candidates: list[dict] = []
     for page in existing_pages:
         slug = page.get("slug", "")
         if slug in config.EXCLUDE_SLUG_HINTS or slug == "home":
+            continue
+        page_url = (page.get("url") or "").strip()
+        if not page_url:
+            continue
+        parsed_url = urlparse(page_url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            continue
+        page_netloc = parsed_url.netloc.lower().lstrip("www.")
+        if site_netloc and page_netloc != site_netloc:
             continue
         haystack = f"{page.get('title', '')} {slug}".lower()
         overlap = len(query_tokens & _keyword_tokens(haystack))
@@ -266,7 +278,7 @@ def _select_internal_links(existing_pages: list[dict], query: str, limit: int = 
         candidates.append(
             {
                 "title": page.get("title") or slug.replace("-", " ").title(),
-                "url": page["url"],
+                "url": page_url,
                 "slug": slug,
                 "anchor": _suggest_anchor(page),
                 "score": score,
@@ -370,19 +382,19 @@ def _trim_meta(value: str, limit: int = 60) -> str:
     compact = re.sub(r"\s+", " ", value or "").strip()
     if len(compact) <= limit:
         return compact
-    return compact[: limit - 1].rstrip(" -|:") + "…"
+    return compact[: limit - 1].rstrip(" -|:") + "..."
 
 
 def _trim_description(value: str, min_len: int = 140, max_len: int = 155) -> str:
     compact = re.sub(r"\s+", " ", value or "").strip()
     if len(compact) > max_len:
-        compact = compact[: max_len - 1].rstrip(" -|:") + "…"
+        compact = compact[: max_len - 1].rstrip(" -|:") + "..."
     if len(compact) >= min_len:
         return compact
     supplement = " Learn key steps, common issues, and the best CapCut follow-up resources."
     merged = (compact + supplement).strip()
     if len(merged) > max_len:
-        merged = merged[: max_len - 1].rstrip(" -|:") + "…"
+        merged = merged[: max_len - 1].rstrip(" -|:") + "..."
     return merged
 
 
@@ -398,3 +410,8 @@ def _strip_html(value: str) -> str:
 
 def _count_words(value: str) -> int:
     return len(WORD_PATTERN.findall(value))
+
+
+
+
+

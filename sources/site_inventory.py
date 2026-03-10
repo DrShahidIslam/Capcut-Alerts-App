@@ -10,12 +10,14 @@ from xml.etree import ElementTree
 import requests
 
 import config
+from database.db import get_connection
 
 logger = logging.getLogger(__name__)
 
 
 def fetch_existing_site_pages() -> list[dict]:
     pages = [_page_from_url(url) for url in config.EXISTING_SITE_URLS]
+    pages.extend(_load_local_inventory())
     sitemap_urls = [
         f"{config.SITE_URL.rstrip('/')}/post-sitemap.xml",
         f"{config.SITE_URL.rstrip('/')}/page-sitemap.xml",
@@ -60,11 +62,41 @@ def _parse_sitemap(xml_text: str) -> list[dict]:
 
 
 def _page_from_url(url: str, lastmod: str = "") -> dict:
-    parsed = urlparse(url)
+    normalized = _normalize_url(url)
+    parsed = urlparse(normalized)
     slug = parsed.path.strip("/")
     return {
-        "url": url,
+        "url": normalized,
         "slug": slug or "home",
         "title": slug.replace("-", " ").title() if slug else "Home",
         "updated_at": lastmod,
     }
+
+
+def _normalize_url(url: str) -> str:
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme:
+        return url
+    base = config.SITE_URL.rstrip("/")
+    return f"{base}/{url.lstrip('/')}"
+
+
+def _load_local_inventory() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT url, slug, title, updated_at FROM site_inventory").fetchall()
+    finally:
+        conn.close()
+    pages = []
+    for row in rows:
+        pages.append(
+            {
+                "url": _normalize_url(row["url"]),
+                "slug": row["slug"] or "home",
+                "title": row["title"] or (row["slug"].replace("-", " ").title() if row["slug"] else "Home"),
+                "updated_at": row["updated_at"] or "",
+            }
+        )
+    return pages

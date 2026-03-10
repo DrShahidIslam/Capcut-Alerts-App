@@ -1,4 +1,4 @@
-"""
+ï»¿"""
 Admin reporting helpers for opportunities and draft history.
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ def render_table(rows: list[dict], columns: list[str]) -> str:
     def _cell(column: str, value: object) -> str:
         text = str(value)
         if len(text) > widths[column]:
-            text = text[: widths[column] - 1] + "…"
+            text = text[: widths[column] - 1] + "..."
         return text.ljust(widths[column])
 
     lines = [" | ".join(column.ljust(widths[column]) for column in columns)]
@@ -160,3 +160,4 @@ def _ensure_parent(path: str) -> None:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
+

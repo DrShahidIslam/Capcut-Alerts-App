@@ -1,4 +1,4 @@
-"""
+﻿"""
 CapCut content pipeline:
 discover -> alert -> draft -> approve -> publish.
 """
@@ -10,6 +10,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import config
 from admin.reporting import (
@@ -159,6 +160,16 @@ def _handle_publish(topic_key: str, status: str) -> None:
         return
     result = create_post(article, status=status)
     if result:
+        post_url = (result.get("link") or "").strip()
+        if not post_url:
+            base = config.WP_URL.rstrip("/")
+            slug = (article.get("slug") or "").strip("/")
+            if slug:
+                post_url = f"{base}/{slug}/"
+        if status == "publish" and post_url:
+            parsed = urlparse(post_url)
+            slug = parsed.path.strip("/") or (article.get("slug") or "home")
+            upsert_site_url(conn, post_url, slug, article.get("title", ""), datetime.now(timezone.utc).isoformat())
         mark_article_status(conn, topic_key, "published" if status == "publish" else "approved", result.get("id"))
         send_status(
             f"WordPress {'published' if status == 'publish' else 'saved a draft for'}: "
@@ -336,3 +347,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
