@@ -1,4 +1,4 @@
-"""
+﻿"""
 Central configuration for the CapCut content pipeline.
 """
 from __future__ import annotations
@@ -22,6 +22,8 @@ WP_USERNAME = os.getenv("WP_USERNAME")
 WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD")
 WP_DEFAULT_STATUS = os.getenv("WP_DEFAULT_STATUS", "draft")
 WP_DEFAULT_CATEGORY = os.getenv("WP_DEFAULT_CATEGORY", "Blog")
+WP_UPLOAD_FEATURED_IMAGE = os.getenv("WP_UPLOAD_FEATURED_IMAGE", "true").strip().lower() in {"1", "true", "yes", "y"}
+WP_SET_RANKMATH_META = os.getenv("WP_SET_RANKMATH_META", "true").strip().lower() in {"1", "true", "yes", "y"}
 
 _gemini_keys_env = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
 GEMINI_API_KEYS = [key.strip() for key in _gemini_keys_env.split(",") if key.strip()]

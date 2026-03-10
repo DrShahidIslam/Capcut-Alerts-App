@@ -125,11 +125,27 @@ def _generate_with_gemini(prompt: str) -> dict | None:
                 contents=prompt,
             )
             raw_text = getattr(response, "text", "") or ""
-            match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-            if not match:
+            cleaned = raw_text.strip()
+            # Handle common wrappers like ```json ... ```
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+            payload_text = ""
+            if cleaned.startswith("{") and cleaned.endswith("}"):
+                payload_text = cleaned
+            else:
+                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                payload_text = match.group(0) if match else ""
+
+            if not payload_text:
                 logger.warning("Gemini response was not valid JSON for key %s", index)
                 continue
-            payload = json.loads(match.group(0))
+
+            try:
+                payload = json.loads(payload_text)
+            except Exception:
+                logger.warning("Gemini response JSON parse failed for key %s", index)
+                continue
             if "content" not in payload:
                 logger.warning("Gemini response missed content for key %s", index)
                 continue
@@ -138,81 +154,163 @@ def _generate_with_gemini(prompt: str) -> dict | None:
             logger.warning("Gemini generation failed for key %s: %s", index, exc)
     return None
 
+def _parse_comparison_entities(query: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", (query or "").strip())
+    normalized = re.sub(r"\bversus\b", "vs", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bvs\.\b", "vs", normalized, flags=re.IGNORECASE)
+    parts = [part.strip(" -:|\t").strip() for part in re.split(r"\bvs\b", normalized, flags=re.IGNORECASE) if part.strip()]
+
+    canon = {
+        "capcut": "CapCut",
+        "inshot": "InShot",
+        "canva": "Canva",
+        "vn": "VN",
+        "kinemaster": "KineMaster",
+        "alight motion": "Alight Motion",
+        "premiere rush": "Premiere Rush",
+        "filmora": "Filmora",
+    }
+
+    cleaned: list[str] = []
+    seen = set()
+    for raw in parts:
+        simple = re.sub(r"\s+", " ", raw.lower()).strip()
+        name = canon.get(simple) or raw.strip().title()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(name)
+
+    if not cleaned:
+        cleaned = ["CapCut"]
+
+    # Make sure CapCut appears first for our niche site.
+    if any(name.lower() == "capcut" for name in cleaned) and cleaned[0].lower() != "capcut":
+        cleaned = ["CapCut"] + [name for name in cleaned if name.lower() != "capcut"]
+
+    return cleaned
 
 def _build_template_article(opportunity: dict, internal_links: list[dict]) -> dict:
     keyword = opportunity["query"]
     title = opportunity["title"]
-    focus_keywords = _default_focus_keywords(keyword, opportunity["bucket"])
-    intro_link = _link_html(internal_links[0]) if internal_links else ""
-    extra_links = "".join(f"<li>{_link_html(link)}</li>" for link in internal_links[1:4])
-    comparison_note = ""
-    if opportunity["bucket"] == "comparison":
-        comparison_note = (
-            "<h2>Quick comparison table</h2>"
-            "<table><tr><td><strong>Area</strong></td><td><strong>CapCut</strong></td><td><strong>Alternative</strong></td></tr>"
-            "<tr><td>Learning curve</td><td>Beginner friendly</td><td>Varies by tool</td></tr>"
-            "<tr><td>Templates</td><td>Strong short-form ecosystem</td><td>Depends on app</td></tr>"
-            "<tr><td>Export workflow</td><td>Fast for social content</td><td>May suit other formats better</td></tr></table>"
-        )
-    related_guides = ""
-    if intro_link or extra_links:
-        related_guides = (
-            "<h2>Helpful related guides</h2>"
-            f"<p>{intro_link}</p>"
-            f"<ul>{extra_links}</ul>"
-        )
+    bucket = opportunity.get("bucket") or "how_to"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    apps = _parse_comparison_entities(keyword) if bucket == "comparison" else ["CapCut"]
+    app_a = apps[0] if apps else "CapCut"
+    app_b = apps[1] if len(apps) > 1 else "InShot"
+    app_c = apps[2] if len(apps) > 2 else "Canva"
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    quick_answer = (
+        f"<p>If you want the fastest path to short-form edits with templates and effects, pick <strong>{html.escape(app_a)}</strong>. "
+        f"If you want simple, reliable phone editing with minimal complexity, <strong>{html.escape(app_b)}</strong> is usually the easiest. "
+        f"If your workflow is more about graphics, thumbnails, and brand-ready social posts (with light video editing), <strong>{html.escape(app_c)}</strong> often fits best.</p>"
+    )
+
+    comparison_table = ""
+    if bucket == "comparison":
+        comparison_table = f"""
+<h2>Quick comparison table</h2>
+<table>
+<tr><td><strong>Area</strong></td><td><strong>{html.escape(app_a)}</strong></td><td><strong>{html.escape(app_b)}</strong></td><td><strong>{html.escape(app_c)}</strong></td></tr>
+<tr><td>Best for</td><td>Short-form video edits, templates, effects</td><td>Fast trims, captions, simple social videos</td><td>Design-first content, social graphics, teams</td></tr>
+<tr><td>Templates</td><td>Strong short-form ecosystem</td><td>Some presets, usually simpler</td><td>Huge design template library</td></tr>
+<tr><td>Learning curve</td><td>Beginner friendly, more depth if you want it</td><td>Very beginner friendly</td><td>Beginner friendly for design, video varies</td></tr>
+<tr><td>Export control</td><td>Good control for common social formats</td><td>Simple controls that usually work</td><td>Great for social assets, video export depends on plan</td></tr>
+<tr><td>Collaboration</td><td>Mostly solo editing</td><td>Mostly solo editing</td><td>Strong collaboration and brand workflows</td></tr>
+</table>
+"""
+
+    setup_path = ""
+    if bucket == "comparison":
+        setup_path = f"""
+<h2>Decide in 60 seconds (realistic setup path)</h2>
+<ol>
+<li><strong>Pick your main output.</strong> If it is TikTok/Reels edits, start with {html.escape(app_a)}. If it is story graphics or thumbnails, start with {html.escape(app_c)}.</li>
+<li><strong>Pick your device.</strong> If you only edit on a phone, {html.escape(app_b)} stays lightweight. If you need heavier effects, {html.escape(app_a)} tends to scale better.</li>
+<li><strong>Pick your "must-have" feature.</strong> Templates and effects: {html.escape(app_a)}. Simple trims and text: {html.escape(app_b)}. Brand kits and collaboration: {html.escape(app_c)}.</li>
+</ol>
+"""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Next best CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
     content = f"""
-<p><strong>{html.escape(keyword.title())}</strong> is worth covering because users want a fast answer, realistic setup advice, and a clear sense of whether CapCut is the right fit for their workflow.</p>
-<p>The strongest version of this article answers the core question immediately, shows where CapCut performs well, and points readers toward the next step instead of burying the recommendation.</p>
+<p><strong>{html.escape(keyword)}</strong> is a common comparison because creators want a fast answer and a practical recommendation, not a long list of vague pros and cons.</p>
+<h2>Quick answer</h2>
+{quick_answer}
 <h2>Key takeaways</h2>
 <ul>
-<li>Lead with the direct answer users expect from search and AI overview results.</li>
-<li>Explain the most likely setup path before advanced tips.</li>
-<li>Link readers to the next best CapCut guide on your site while the intent is still fresh.</li>
+<li>Choose the editor that matches your workflow first (short-form edits vs simple trims vs design-led content).</li>
+<li>Device support and export needs matter more than "which app has more features".</li>
+<li>If CapCut is the frontrunner, set it up once with the right settings so your exports look consistent.</li>
 </ul>
-<h2>Quick answer</h2>
-<p>Most people searching for {html.escape(keyword)} want to know whether CapCut can solve a real editing problem quickly. The best answer is usually yes, but the right recommendation depends on device support, export needs, and whether they need premium tools or simple social-ready editing.</p>
-<h2>Who this is best for</h2>
-<p>This topic works best for beginner creators, mobile editors, and anyone comparing fast short-form video workflows. Advanced users still care, but they usually want more detail around templates, export quality, performance, and app limitations.</p>
-<h2>How to cover the topic well</h2>
-<ol>
-<li>Answer the main question in plain language within the introduction.</li>
-<li>Walk through the setup or decision path with no fluff.</li>
-<li>Call out trade-offs, privacy concerns, or version differences honestly.</li>
-<li>Use internal links to keep readers moving through the CapCut content cluster.</li>
-</ol>
-{comparison_note}
+{comparison_table}
+{setup_path}
+<h2>Where {html.escape(app_a)} wins</h2>
+<ul>
+<li><strong>Short-form speed:</strong> built for Reels/TikTok style edits, especially if you lean on templates and effects.</li>
+<li><strong>Editing depth:</strong> more room to grow into transitions, timing, and polish without switching tools.</li>
+<li><strong>Social export workflow:</strong> usually quick to get a clean vertical export when your settings are right.</li>
+</ul>
+<p>If you are choosing {html.escape(app_a)} mainly for export quality, start here: {link_1 if link_1 else 'CapCut export settings matter most for consistent results.'}</p>
+<h2>Where {html.escape(app_b)} wins</h2>
+<ul>
+<li><strong>Simple editing:</strong> reliable for trims, basic text, and quick social-ready edits.</li>
+<li><strong>Low friction:</strong> fewer options to manage if you just want to ship content.</li>
+</ul>
+<h2>Where {html.escape(app_c)} wins</h2>
+<ul>
+<li><strong>Design-first workflows:</strong> thumbnails, story graphics, and brand kits are often the priority.</li>
+<li><strong>Team collaboration:</strong> helpful if multiple people touch the same assets.</li>
+</ul>
 <h2>Common mistakes and realistic limitations</h2>
 <ul>
-<li>Users often expect every feature to work the same across Android, iOS, and PC.</li>
-<li>Template-heavy workflows change quickly, so examples need refreshing over time.</li>
-<li>Mod APK topics need safety and privacy framing instead of exaggerated claims.</li>
+<li>Expecting every feature to work the same across Android, iOS, and PC versions.</li>
+<li>Assuming templates stay the same forever; trends change quickly and examples need refreshing.</li>
+<li>For "mod APK" searches: prioritize safety and privacy research over shortcuts.</li>
 </ul>
-{related_guides}
+{internal_links_block}
 <h2>FAQ</h2>
-<h3>Is this topic still worth publishing?</h3>
-<p>Yes. It matches recurring user intent around CapCut features, setup, troubleshooting, and comparison research.</p>
-<h3>What helps the page rank beyond standard SEO?</h3>
-<p>Answer-first copy, structured headings, direct recommendations, and clear related entities improve visibility in both classic search and AI-driven answer surfaces.</p>
-<h3>How many internal links should the article include?</h3>
-<p>Use at least three natural internal links to relevant tutorials, troubleshooting pages, or explainers so the article strengthens topical authority.</p>
-<h3>Should the article mention drawbacks?</h3>
-<p>Yes. Balanced discussion improves trust, supports better conversions, and makes the page more useful when readers compare tools.</p>
+<h3>Is {html.escape(app_a)} better than {html.escape(app_b)}?</h3>
+<p>Usually yes for template-led short-form editing and effects. {html.escape(app_b)} often wins when you want the simplest edit with the least setup.</p>
+<h3>Can {html.escape(app_c)} replace {html.escape(app_a)} for video editing?</h3>
+<p>For lightweight edits and design-first content, it can. If you need heavier edits, transitions, and effects, {html.escape(app_a)} is typically the safer choice.</p>
+<h3>Which one is best for beginners?</h3>
+<p>{html.escape(app_b)} is often the easiest for pure editing basics, while {html.escape(app_c)} is easiest for design templates. {html.escape(app_a)} is still beginner friendly but has more depth.</p>
+<h3>Do these apps export without watermarks?</h3>
+<p>It depends on the feature and plan. If watermark questions are the main blocker, focus on official settings and exports instead of risky downloads.</p>
+<h3>What should I do next if I choose {html.escape(app_a)}?</h3>
+<p>Set up your export defaults, learn the key features you will use weekly, and save 1 to 2 repeatable templates so editing stays fast. {link_2 if link_2 else ''}</p>
 <h2>Conclusion</h2>
-<p>{html.escape(keyword.title())} deserves a dedicated page because it answers a real search need and fits naturally inside your wider CapCut topic cluster. Publish the draft, review examples for freshness, and connect it to related guides that deepen the reader journey.</p>
+<p>For most creators comparing {html.escape(keyword)}, <strong>{html.escape(app_a)}</strong> is the best starting point when you want short-form editing power without a steep learning curve. Use {html.escape(app_b)} for simple, quick edits and {html.escape(app_c)} when design and brand assets are the bigger need.</p>
 """
+
     return {
         "title": title,
         "meta_title": _trim_meta(title),
         "meta_description": _trim_description(
-            f"{title} explained with practical steps, honest pros and cons, and quick answers to the questions users actually search for."
+            f"{title} explained with a fast recommendation, a clear decision path, and FAQs for picking the right editor."
         ),
-        "excerpt": f"A practical guide to {keyword} with direct answers, realistic trade-offs, and related CapCut resources.",
+        "excerpt": f"A practical comparison of {keyword} with a quick recommendation, trade-offs, and next steps.",
         "focus_keywords": focus_keywords,
         "content": _cleanup_html(content),
     }
-
-
 def _normalize_article(article: dict, opportunity: dict, internal_links: list[dict]) -> dict:
     content = _cleanup_html(article.get("content") or "")
     if not content:
@@ -410,6 +508,10 @@ def _strip_html(value: str) -> str:
 
 def _count_words(value: str) -> int:
     return len(WORD_PATTERN.findall(value))
+
+
+
+
 
 
 
