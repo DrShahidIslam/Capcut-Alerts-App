@@ -51,6 +51,7 @@ def generate_article(opportunity: dict, existing_pages: list[dict]) -> dict:
 
 
 def build_article_prompt(opportunity: dict, internal_links: list[dict]) -> str:
+    bucket = opportunity.get("bucket") or "how_to"
     internal_link_lines = [
         {
             "title": link["title"],
@@ -59,6 +60,7 @@ def build_article_prompt(opportunity: dict, internal_links: list[dict]) -> str:
         }
         for link in internal_links[:5]
     ]
+    bucket_requirements = _bucket_prompt_requirements(bucket, opportunity.get("query") or "")
     return f"""
 You are writing for {config.SITE_NAME}, a niche blog about CapCut and CapCut Pro APK topics.
 
@@ -73,11 +75,12 @@ Requirements:
 - Start with a direct answer summary in the first 2 paragraphs.
 - Use clear entities, practical steps, and honest trade offs so the article can be cited by AI overviews.
 - Include a concise "Key takeaways" list near the top.
-- Add a feature by feature comparison table when the topic is a comparison.
-- Add a short "best choice by creator type" section with 3 distinct use cases.
+
 - Include a concrete workflow checklist list the reader can follow today.
 - Cover beginner intent first, then advanced considerations.
-- Include direct comparisons when relevant and mention risks or limitations honestly.
+- Mention risks or limitations honestly.
+- Follow these bucket specific requirements:
+{bucket_requirements}
 - Add at least 3 natural internal links using this pool when relevant: {json.dumps(internal_link_lines, ensure_ascii=False)}
 - Add an FAQ section with 4 to 6 question and answer pairs based on natural language queries.
 - Add a short conclusion with a light CTA.
@@ -100,6 +103,61 @@ Field rules:
 Planning brief:
 {opportunity['brief']}
 """
+
+
+
+def _bucket_prompt_requirements(bucket: str, query: str) -> str:
+    if bucket == "comparison":
+        return """- Add a feature by feature comparison table.
+- Add a short best choice by creator type section with 3 distinct use cases.
+- Include direct comparisons where they help the decision.
+"""
+    if bucket == "fix":
+        mod_line = "- Add a short warning about mod APK risks if the query includes mod or apk.\n" if _contains_mod_apk(query) else ""
+        return (
+            "- Include a Causes section with realistic reasons.\n"
+            "- Include a Step by step fixes checklist for Android.\n"
+            "- Add a When it is a server issue note.\n"
+            f"{mod_line}"
+        )
+    if bucket == "download":
+        return """- Include a Safe download and setup checklist.
+- Clarify device compatibility and version notes.
+- Add a common errors section with fixes.
+"""
+    if bucket == "safety":
+        return """- Explain safety, privacy, and legal considerations clearly.
+- Include risk factors and what to avoid.
+- End with a safer alternative or official option.
+"""
+    if bucket == "trend":
+        return """- Explain what the trend is and why it matters.
+- Include how to recreate the trend safely in CapCut.
+- Add a quick checklist for execution.
+"""
+    return """- Use a clear step by step guide.
+- Add common mistakes and how to avoid them.
+- Include a short checklist for consistent results.
+"""
+
+
+def _contains_mod_apk(text: str) -> bool:
+    lowered = (text or "").lower()
+    return "mod" in lowered or "apk" in lowered
+
+
+def _default_meta_description(title: str, bucket: str) -> str:
+    if bucket == "comparison":
+        return f"{title} with quick answers, a clear decision path, and FAQs to help you choose the right editor."
+    if bucket == "fix":
+        return f"{title} with fast causes, step by step fixes, and prevention tips for common CapCut issues."
+    if bucket == "download":
+        return f"{title} with safe setup steps, compatibility notes, and quick fixes for common install errors."
+    if bucket == "safety":
+        return f"{title} with clear safety guidance, risk factors, and safer alternatives."
+    if bucket == "trend":
+        return f"{title} explained with what the trend is, how to recreate it, and quick execution tips."
+    return f"{title} with quick answers, practical steps, FAQs, and internal links for CapCut users."
 
 
 def get_generation_health() -> dict:
@@ -166,6 +224,7 @@ def _generate_with_gemini(prompt: str) -> dict | None:
 
 
 def _parse_comparison_entities(query: str) -> list[str]:
+
     normalized = re.sub(r"\s+", " ", (query or "").strip())
     normalized = re.sub(r"\bversus\b", "vs", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\bvs\.\b", "vs", normalized, flags=re.IGNORECASE)
@@ -206,12 +265,20 @@ def _parse_comparison_entities(query: str) -> list[str]:
 
 
 def _build_template_article(opportunity: dict, internal_links: list[dict]) -> dict:
+    bucket = opportunity.get("bucket") or "how_to"
+    if bucket == "comparison":
+        return _build_comparison_template(opportunity, internal_links)
+    if bucket == "fix":
+        return _build_fix_template(opportunity, internal_links)
+    return _build_generic_template(opportunity, internal_links)
+
+def _build_comparison_template(opportunity: dict, internal_links: list[dict]) -> dict:
     keyword = opportunity["query"]
     title = opportunity["title"]
-    bucket = opportunity.get("bucket") or "how_to"
+    bucket = "comparison"
     focus_keywords = _default_focus_keywords(keyword, bucket)
 
-    apps = _parse_comparison_entities(keyword) if bucket == "comparison" else ["CapCut"]
+    apps = _parse_comparison_entities(keyword)
     app_a = apps[0] if apps else "CapCut"
     app_b = apps[1] if len(apps) > 1 else "InShot"
     app_c = apps[2] if len(apps) > 2 else "Canva"
@@ -383,6 +450,178 @@ def _build_template_article(opportunity: dict, internal_links: list[dict]) -> di
     }
 
 
+
+def _build_fix_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = opportunity.get("bucket") or "fix"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    mod_note = ""
+    if _contains_mod_apk(keyword):
+        mod_note = """
+<h2>Important note about mod APKs</h2>
+<p>Mod APK builds are not supported by CapCut and can break sign in, network calls, or updates. If you see a persistent no internet message, switch to the official app before deeper troubleshooting.</p>
+"""
+
+    content = f"""
+<p><strong>{html.escape(keyword)}</strong> usually means CapCut cannot reach its servers or the app is blocked by a device or network setting. The fastest fix is to confirm your connection, update the app, and clear the cache.</p>
+<h2>Quick answer</h2>
+<p>Restart your phone, switch between Wi Fi and mobile data, disable any VPN or ad blocker, update CapCut, then clear the app cache. If the issue continues, reset app data and sign in again.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>Most cases are caused by network instability, VPNs, or an outdated app build.</li>
+<li>Clearing cache and updating CapCut fixes the error for most Android users.</li>
+<li>If the app works on another network, your current Wi Fi or DNS is the blocker.</li>
+</ul>
+<h2>Why CapCut shows a no internet connection error</h2>
+<ul>
+<li>Temporary server outage or regional restriction.</li>
+<li>Weak or unstable Wi Fi or mobile data connection.</li>
+<li>VPN, private DNS, firewall, or ad blocker interfering with requests.</li>
+<li>Outdated CapCut version or corrupted cache files.</li>
+<li>Background data or battery saver blocking network access.</li>
+</ul>
+<h2>Working fixes on Android, step by step</h2>
+<ol>
+<li><strong>Confirm the network.</strong> Open another app or website to check if your connection works.</li>
+<li><strong>Switch networks.</strong> Move from Wi Fi to mobile data or try a different Wi Fi network.</li>
+<li><strong>Disable VPN or DNS tools.</strong> Turn off VPN, private DNS, or ad blockers and retry.</li>
+<li><strong>Update CapCut.</strong> Install the latest version from the official store.</li>
+<li><strong>Clear cache.</strong> Settings, Apps, CapCut, Storage, Clear cache.</li>
+<li><strong>Reset app data.</strong> If cache fails, clear storage and sign in again.</li>
+<li><strong>Allow background data.</strong> Turn off battery saver for CapCut and allow background data.</li>
+<li><strong>Restart the device.</strong> A fresh boot fixes stuck network services.</li>
+</ol>
+{mod_note}
+<h2>When it is a server issue</h2>
+<p>If CapCut fails on multiple networks and other users report the same error, it is likely a server side outage. Wait a few hours and try again after updating the app.</p>
+<h2>Prevent the error from coming back</h2>
+<ul>
+<li>Keep CapCut updated and avoid skipping multiple versions.</li>
+<li>Use stable Wi Fi for large downloads and template sync.</li>
+<li>Limit aggressive VPN or ad block rules that break app requests.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Why does CapCut say no internet when my Wi Fi works?</h3>
+<p>VPNs, private DNS, or app level data restrictions can block CapCut even when other apps work.</p>
+<h3>Will clearing cache delete my projects?</h3>
+<p>Clearing cache usually does not remove saved projects, but clearing storage can sign you out. Back up important exports first.</p>
+<h3>Is this an Android only problem?</h3>
+<p>It happens on Android most often because of background data and battery limits, but iOS can see it during outages too.</p>
+<h3>What if the error appears only on one network?</h3>
+<p>The network or DNS settings are the likely blocker. Try another Wi Fi or mobile data and compare.</p>
+<h2>Conclusion</h2>
+<p>Most no internet errors are caused by network settings or outdated app builds. Run the quick fixes above, then reset app data if needed to get CapCut working again.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} explained with fast causes, step by step fixes, and safe troubleshooting for Android users."
+        ),
+        "excerpt": f"Fix {keyword} fast with causes, step by step troubleshooting, and prevention tips.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+
+def _build_generic_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = opportunity.get("bucket") or "how_to"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    checklist_title = "Quick workflow checklist"
+    if bucket == "download":
+        checklist_title = "Safe setup checklist"
+
+    content = f"""
+<p><strong>{html.escape(keyword)}</strong> is a common CapCut task. The fastest path is to follow a clear setup, avoid common mistakes, and keep your export settings consistent.</p>
+<h2>Quick answer</h2>
+<p>Follow the steps below in order, then verify the result with a short test export so you can lock in your settings.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>Match the steps to your device and export goal first.</li>
+<li>Use one consistent preset so results stay predictable.</li>
+<li>Test a short clip before final export.</li>
+</ul>
+<h2>Step by step guide</h2>
+<ol>
+<li><strong>Start with the right project preset.</strong> Pick the format that matches your platform.</li>
+<li><strong>Import and trim your clips.</strong> Keep the first seconds tight and clear.</li>
+<li><strong>Apply your main effects.</strong> Add only what you can repeat consistently.</li>
+<li><strong>Review audio and captions.</strong> Keep captions short and readable.</li>
+<li><strong>Export a test clip.</strong> Check it on a phone before final export.</li>
+</ol>
+<h2>Common mistakes to avoid</h2>
+<ul>
+<li>Mixing formats or sizes within one project.</li>
+<li>Overusing effects that slow down exports.</li>
+<li>Skipping a quick preview before publishing.</li>
+</ul>
+<h2>{checklist_title}</h2>
+<ul>
+<li>Confirm your output size and frame rate.</li>
+<li>Keep text inside safe margins.</li>
+<li>Listen with headphones before export.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>What is the fastest way to finish this?</h3>
+<p>Use a simple preset, keep effects minimal, and export a short test clip first.</p>
+<h3>Will this work on Android and iOS?</h3>
+<p>Most steps are the same, but menus can vary by device and app version.</p>
+<h3>How do I keep quality consistent?</h3>
+<p>Stick to one export preset and avoid changing formats mid project.</p>
+<h3>What if it does not look right after export?</h3>
+<p>Re check your size, frame rate, and bitrate, then export a short test clip again.</p>
+<h2>Conclusion</h2>
+<p>Follow the steps above and keep one reliable preset for steady, repeatable results.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} explained with a quick guide, common mistakes, and practical steps for consistent results."
+        ),
+        "excerpt": f"A practical guide to {keyword} with clear steps, tips, and FAQs.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
 def _get_apps_for_opportunity(opportunity: dict) -> list[str]:
     bucket = opportunity.get("bucket") or ""
     if bucket == "comparison":
@@ -391,15 +630,17 @@ def _get_apps_for_opportunity(opportunity: dict) -> list[str]:
 
 
 def _build_expansion_sections(opportunity: dict, internal_links: list[dict]) -> str:
-    apps = _get_apps_for_opportunity(opportunity)
-    app_a = apps[0] if apps else "CapCut"
-    app_b = apps[1] if len(apps) > 1 else "InShot"
-    app_c = apps[2] if len(apps) > 2 else "VN"
+    bucket = opportunity.get("bucket") or "how_to"
+    if bucket == "comparison":
+        apps = _get_apps_for_opportunity(opportunity)
+        app_a = apps[0] if apps else "CapCut"
+        app_b = apps[1] if len(apps) > 1 else "InShot"
+        app_c = apps[2] if len(apps) > 2 else "Canva"
 
-    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
-    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+        link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+        link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
 
-    return f"""
+        return f"""
 <h2>Which editor fits your workflow?</h2>
 <ul>
 <li><strong>Short form, trend led edits:</strong> {html.escape(app_a)} keeps you fast with templates, effects, and polish.</li>
@@ -412,6 +653,24 @@ def _build_expansion_sections(opportunity: dict, internal_links: list[dict]) -> 
 <li>If you hand edits off to a teammate or need shared assets, default to {html.escape(app_c)}.</li>
 <li>If you only need trims, captions, and exports, {html.escape(app_b)} is enough.</li>
 </ul>
+<h2>Quality checklist before you export</h2>
+<ul>
+<li>Keep key text inside safe margins so it is not cropped on phones.</li>
+<li>Check captions for timing and readability, short lines work best.</li>
+<li>Listen with headphones and reduce music volume under voice.</li>
+<li>Export one test clip, review on a phone, then finalize the batch.</li>
+</ul>
+<h2>Related CapCut resources</h2>
+<ul>
+<li>{link_1 if link_1 else 'CapCut best settings to keep quality consistent.'}</li>
+<li>{link_2 if link_2 else 'CapCut templates and trends guide for faster edits.'}</li>
+</ul>
+"""
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+
+    return f"""
 <h2>Quality checklist before you export</h2>
 <ul>
 <li>Keep key text inside safe margins so it is not cropped on phones.</li>
@@ -457,7 +716,7 @@ def _normalize_article(article: dict, opportunity: dict, internal_links: list[di
     meta_description = _trim_description(
         _sanitize_plain_text(
             article.get("meta_description")
-            or f"{title} with quick answers, practical steps, FAQs, and internal links for readers comparing the best CapCut workflow."
+            or _default_meta_description(title, opportunity.get("bucket") or "how_to")
         )
     )
     focus_keywords = _normalize_focus_keywords(article.get("focus_keywords"), opportunity)
@@ -584,6 +843,13 @@ def _normalize_focus_keywords(raw_value: object, opportunity: dict) -> list[str]
     return cleaned
 
 
+def _build_template_article(opportunity: dict, internal_links: list[dict]) -> dict:
+    bucket = opportunity.get("bucket") or "how_to"
+    if bucket == "comparison":
+        return _build_comparison_template(opportunity, internal_links)
+    if bucket == "fix":
+        return _build_fix_template(opportunity, internal_links)
+    return _build_generic_template(opportunity, internal_links)
 def _default_focus_keywords(keyword: str, bucket: str) -> list[str]:
     base = keyword.lower().strip()
     variations = [
@@ -675,3 +941,16 @@ def _sanitize_html_text(value: str) -> str:
 
 def _count_words(value: str) -> int:
     return len(WORD_PATTERN.findall(value))
+
+
+
+
+
+
+
+
+
+
+
+
+
