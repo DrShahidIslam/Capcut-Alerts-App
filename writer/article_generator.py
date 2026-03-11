@@ -39,13 +39,16 @@ def generate_article(opportunity: dict, existing_pages: list[dict]) -> dict:
     link_candidates = _select_internal_links(existing_pages, opportunity["query"], limit=6)
     prompt = build_article_prompt(opportunity, link_candidates)
     article = _generate_with_gemini(prompt)
+    is_fallback = False
     if article is None:
         article = _build_template_article(opportunity, link_candidates)
+        is_fallback = True
     article = _normalize_article(article, opportunity, link_candidates)
     article["topic_key"] = opportunity["topic_key"]
     article["slug"] = opportunity["slug"]
     article["bucket"] = opportunity["bucket"]
     article["score"] = opportunity["score"]
+    article["is_fallback"] = is_fallback
     article["word_count"] = _count_words(_strip_html(article["content"]))
     return article
 
@@ -270,11 +273,11 @@ def _generate_with_gemini(prompt: str) -> dict | None:
                 logger.warning("Gemini response JSON parse failed for key %s", index)
                 continue
             if "content" not in payload:
-                logger.warning("Gemini response missed content for key %s", index)
+                logger.warning("Gemini response missed content for key %s (Response: %s)", index, payload_text[:100])
                 continue
             return payload
         except Exception as exc:
-            logger.warning("Gemini generation failed for key %s: %s", index, exc)
+            logger.warning("Gemini generation failed for key %s: %s", index, exc, exc_info=True)
     return None
 
 
@@ -341,7 +344,224 @@ def _build_template_article(opportunity: dict, internal_links: list[dict]) -> di
         return _build_platform_template(opportunity, internal_links)
     if bucket == "update":
         return _build_update_template(opportunity, internal_links)
+    if bucket == "download":
+        return _build_download_template(opportunity, internal_links)
+    if bucket == "safety":
+        return _build_safety_template(opportunity, internal_links)
+    if bucket == "trend":
+        return _build_trend_template(opportunity, internal_links)
     return _build_generic_template(opportunity, internal_links)
+
+def _build_download_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "download"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2:
+        bits = []
+        if link_1: bits.append(f"<li>{link_1}</li>")
+        if link_2: bits.append(f"<li>{link_2}</li>")
+        internal_links_block = f"<h2>Related CapCut downloads and setup guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong>, developed by ByteDance, is a free video editing app available for Android, iOS, Windows, Mac, and Web. If you are looking for <strong>{html.escape(keyword)}</strong>, getting the correct version is critical to avoid installation errors and malware.</p>
+<h2>Direct answer</h2>
+<p>For the safest and most stable experience, always download CapCut directly from the Google Play Store (Android), App Store (iOS), or the official capcut.com website (PC/Mac). Avoid third-party APK sites as they frequently bundle malware or outdated builds.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>Always use official app stores or capcut.com to download CapCut.</li>
+<li>Mod APKs often break sign-in, cloud sync, and template features.</li>
+<li>Ensure your device meets the minimum requirements before installing.</li>
+<li>CapCut is entirely free, though a Pro version exists for advanced AI features.</li>
+</ul>
+<h2>Safe download and setup checklist</h2>
+<ol>
+<li><strong>Check compatibility.</strong> Ensure your Android device is running version 5.0+ or your iPhone is on iOS 11.0+.</li>
+<li><strong>Download from official sources.</strong> Open the Play Store, App Store, or capcut.com.</li>
+<li><strong>Install and grant permissions.</strong> CapCut requires camera, microphone, and storage access to function correctly.</li>
+<li><strong>Log in (Optional).</strong> Signing in with TikTok, Google, or Facebook syncs your projects across devices.</li>
+<li><strong>Update regularly.</strong> Keep auto-updates on to receive the latest effects and bug fixes.</li>
+</ol>
+<h2>Device compatibility table</h2>
+<table>
+<tr><td><strong>Platform</strong></td><td><strong>Minimum Requirements</strong></td><td><strong>Official Source</strong></td></tr>
+<tr><td>Android</td><td>Android 5.0, 2GB RAM</td><td>Google Play Store</td></tr>
+<tr><td>iOS</td><td>iOS 11.0, iPhone 7+</td><td>Apple App Store</td></tr>
+<tr><td>Windows</td><td>Windows 10 (64-bit), 4GB RAM</td><td>capcut.com</td></tr>
+<tr><td>Mac</td><td>macOS 10.15+, 4GB RAM</td><td>capcut.com or Mac App Store</td></tr>
+</table>
+<h2>Warning about Mod APKs</h2>
+<p>While many users search for "CapCut Pro Mod APKs" to get premium features for free, these files are highly risky. They are frequently modified to steal login credentials, secretly mine cryptocurrency, or inject ads. Furthermore, ByteDance actively blocks modified clients, meaning features like auto-captions and templates will often fail with a "No internet connection" error.</p>
+<h2>Common install errors and fixes</h2>
+<ul>
+<li><strong>App not installed (Android):</strong> You may not have enough storage space, or Play Protect is blocking a third-party APK. Clear space and use the Play Store.</li>
+<li><strong>Network error during download:</strong> Switch from cellular data to a stable Wi-Fi connection.</li>
+<li><strong>Parsing error:</strong> The APK file is corrupt or incompatible with your Android version.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Is CapCut completely free to download?</h3>
+<p>Yes, the core app and most of its editing tools are 100% free. CapCut Pro is an optional paid subscription for advanced tools like AI tracking and premium templates.</p>
+<h3>Can I download CapCut on PC?</h3>
+<p>Yes, CapCut offers a native desktop application for both Windows and Mac, available directly from their official website.</p>
+<h3>Why did my CapCut APK download fail?</h3>
+<p>Usually due to insufficient storage space, a weak internet connection, or an outdated operating system version.</p>
+<h3>Is it safe to download old versions of CapCut?</h3>
+<p>Only if downloaded from a trusted repository, but older versions lack new effects and may have critical bugs that have since been patched.</p>
+<h2>Conclusion</h2>
+<p>Finding the right <strong>{html.escape(keyword)}</strong> download is straightforward when using official channels. Stick to the Play Store, App Store, or capcut.com to ensure you get a secure, fully functional version of the editor for your next project.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with safe download steps, compatibility notes, and quick fixes for common installation errors."
+        ),
+        "excerpt": f"A complete guide to {keyword} including safe installation steps and device requirements.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+def _build_safety_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "safety"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2:
+        bits = []
+        if link_1: bits.append(f"<li>{link_1}</li>")
+        if link_2: bits.append(f"<li>{link_2}</li>")
+        internal_links_block = f"<h2>Related CapCut safety guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong> is a widely used video editing app owned by ByteDance, the same parent company as TikTok. Many users asking about <strong>{html.escape(keyword)}</strong> are concerned about data privacy, app permissions, or the risks of downloading unofficial APK files.</p>
+<h2>Direct answer</h2>
+<p>The official CapCut app downloaded from the Google Play Store or Apple App Store is generally safe to use and passes standard security checks. However, downloading "Mod APKs" or unofficial versions from third-party sites carries severe risks of malware, data theft, and account bans.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>Official versions of CapCut are verified by Google Play Protect and Apple's App Store.</li>
+<li>CapCut collects standard usage data similar to most social media and editing apps.</li>
+<li>Modded APKs bypassing payment systems are the largest security threat to users.</li>
+<li>You can manage CapCut's data permissions in your device settings.</li>
+</ul>
+<h2>CapCut data privacy and permissions</h2>
+<p>Like many multimedia applications, CapCut requires specific permissions to function. It needs access to your photos, microphone, and camera to edit videos. By default, CapCut also collects telemetry data on how you use the app to improve its services. If you are concerned about privacy, you can decline optional data-sharing agreements during setup and edit videos locally without creating an account.</p>
+<h2>Risk factors: Official vs. Mod APK</h2>
+<table>
+<tr><td><strong>Security Factor</strong></td><td><strong>Official App Store Version</strong></td><td><strong>Third-Party Mod APK</strong></td></tr>
+<tr><td>Malware Risk</td><td>Extremely Low</td><td>Extremely High</td></tr>
+<tr><td>Data Privacy</td><td>Standard corporate policy</td><td>Unknown (Data can be routed anywhere)</td></tr>
+<tr><td>Feature Stability</td><td>Reliable</td><td>Features like Cloud Sync often break</td></tr>
+<tr><td>Account Safety</td><td>Safe</td><td>High risk of account suspension</td></tr>
+</table>
+<h2>What to avoid</h2>
+<ul>
+<li><strong>"CapCut Pro Free" APKs:</strong> These files claim to unlock premium features but usually contain adware or spyware.</li>
+<li><strong>Suspicious download links:</strong> Never download CapCut from YouTube descriptions, Telegram groups, or untrusted websites.</li>
+<li><strong>Granting unnecessary permissions:</strong> CapCut does not need access to your contacts or precise location to edit videos.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Does CapCut steal your data?</h3>
+<p>No verified instances of CapCut "stealing" data exist. It collects user data according to its privacy policy, which is standard practice for modern apps, though its ties to ByteDance subject it to geopolitical scrutiny.</p>
+<h3>Are CapCut mod APKs safe?</h3>
+<p>No. Modified APKs bypass security checks and are frequently bundled with trojans or adware. They are never recommended.</p>
+<h3>Is CapCut banned in my country?</h3>
+<p>CapCut is currently restricted in a few countries, such as India, due to government regulations regarding apps originating from China.</p>
+<h3>Do I need an account to use CapCut safely?</h3>
+<p>No. You can use CapCut as a local editor without logging in, which enhances privacy by preventing your projects from syncing to the cloud.</p>
+<h2>Conclusion</h2>
+<p>When investigating <strong>{html.escape(keyword)}</strong>, the most important factor is the source of your download. Stick to official app stores and you will remain secure. Avoid modded applications and review your device permissions if privacy is a top priority.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with clear safety guidance, app permission explanations, and risk factors regarding APKs."
+        ),
+        "excerpt": f"An honest look at {keyword}, covering app permissions, data privacy, and the risks of unofficial downloads.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+def _build_trend_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "trend"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2:
+        bits = []
+        if link_1: bits.append(f"<li>{link_1}</li>")
+        if link_2: bits.append(f"<li>{link_2}</li>")
+        internal_links_block = f"<h2>Related CapCut trend guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p>CapCut is famous for its massive library of viral templates and effects. The <strong>{html.escape(keyword)}</strong> trend has recently taken over TikTok and Instagram Reels, and recreating it is easier than you might think.</p>
+<h2>Direct answer</h2>
+<p>To join the {html.escape(keyword)} trend, search for the template directly inside the CapCut app or tap "Try this template" on a TikTok video featuring the trend. Import your media, let the app sync the cuts to the audio, and export your video.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>You can recreate this trend manually or by using a pre-made CapCut template.</li>
+<li>Using a template guarantees your cuts are perfectly synchronized with the trending audio.</li>
+<li>Always export in 1080p vertical format (9:16) for TikTok or Reels.</li>
+</ul>
+<h2>Why this trend works</h2>
+<p>Trends go viral when they combine catchy audio with a specific visual payoff. This particular trend excels because it is highly adaptable—whether you are showing off a travel montage, a before-and-after transformation, or a subtle joke, the format keeps viewers engaged until the end.</p>
+<h2>Step by step recreation guide</h2>
+<ol>
+<li><strong>Find the template.</strong> Open CapCut, go to the Templates tab, and search for "{html.escape(keyword)}". Alternatively, click the CapCut link on a TikTok video using the trend.</li>
+<li><strong>Select your media.</strong> Read the template instructions to see how many photos or videos are required. Choose high-quality clips from your gallery.</li>
+<li><strong>Preview and adjust.</strong> CapCut will automatically generate the video. Watch the preview and use the crop tool to center the important parts of your clips.</li>
+<li><strong>Edit text (Optional).</strong> If the template includes placeholder text, tap it to insert your own joke or caption.</li>
+<li><strong>Export the video.</strong> Tap Export in the top right corner. For the highest quality on TikTok, choose "Export without watermark".</li>
+</ol>
+<h2>Quick execution checklist</h2>
+<ul>
+<li>Make sure your photos/videos match the mood of the audio.</li>
+<li>Ensure the focal point of your clips isn't cut off by the template's framing.</li>
+<li>Use the trending audio directly on TikTok or Instagram when uploading.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Where do I find the audio for this trend?</h3>
+<p>The audio is usually built into the CapCut template. However, you should add the official trending sound from TikTok's audio library when you post the final video to maximize reach.</p>
+<h3>Can I do this trend without a template?</h3>
+<p>Yes. You can manually trim your clips to match the beat of the song using CapCut's "Match Cut" feature, though it takes more time and precision.</p>
+<h3>Why does the template say "Media not supported"?</h3>
+<p>This usually happens if you try to use a photo in a slot that strictly requires a video, or if your file format is incompatible.</p>
+<h3>How do I remove the CapCut watermark?</h3>
+<p>When exporting, choose the "Export without watermark" option, which will save the clean video to your device and automatically open TikTok.</p>
+<h2>Conclusion</h2>
+<p>Jumping on the <strong>{html.escape(keyword)}</strong> trend is a great way to boost your views. By using CapCut's template system, you can recreate the viral format in just a few minutes and get back to creating content.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} explained with what the trend is, how to recreate it, and quick execution tips."
+        ),
+        "excerpt": f"Everything you need to know about the {keyword} trend, including templates and step-by-step instructions.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
 
 def _build_comparison_template(opportunity: dict, internal_links: list[dict]) -> dict:
     keyword = opportunity["query"]
@@ -627,60 +847,55 @@ def _build_generic_template(opportunity: dict, internal_links: list[dict]) -> di
     internal_links_block = ""
     if link_1 or link_2 or link_3:
         bits = []
-        if link_1:
-            bits.append(f"<li>{link_1}</li>")
-        if link_2:
-            bits.append(f"<li>{link_2}</li>")
-        if link_3:
-            bits.append(f"<li>{link_3}</li>")
+        if link_1: bits.append(f"<li>{link_1}</li>")
+        if link_2: bits.append(f"<li>{link_2}</li>")
+        if link_3: bits.append(f"<li>{link_3}</li>")
         internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
 
-    checklist_title = "Quick workflow checklist"
-    if bucket == "download":
-        checklist_title = "Safe setup checklist"
-
     content = f"""
-<p><strong>{html.escape(keyword)}</strong> is a common CapCut task. The fastest path is to follow a clear setup, avoid common mistakes, and keep your export settings consistent.</p>
-<h2>Quick answer</h2>
-<p>Follow the steps below in order, then verify the result with a short test export so you can lock in your settings.</p>
+<p><strong>CapCut</strong>, developed by ByteDance, is a powerful and free video editing app available for Android, iOS, Windows, and Mac. <strong>{html.escape(keyword)}</strong> is a common goal for creators looking to improve their workflow. The fastest path is to follow a clear setup, avoid common mistakes, and keep your export settings consistent.</p>
+<h2>Direct answer</h2>
+<p>To accomplish this task, open your CapCut project, navigate to the relevant tool in the editing timeline, and apply your adjustments. Always verify the result with a short test export before rendering the entire video so you can lock in your settings.</p>
 <h2>Key takeaways</h2>
 <ul>
-<li>Match the steps to your device and export goal first.</li>
-<li>Use one consistent preset so results stay predictable.</li>
-<li>Test a short clip before final export.</li>
+<li>Match the editing steps to your specific device (mobile vs. PC) and export goal first.</li>
+<li>Use one consistent preset or template so results stay predictable across all your videos.</li>
+<li>Always test a short clip before your final, full-length export.</li>
 </ul>
 <h2>Step by step guide</h2>
 <ol>
-<li><strong>Start with the right project preset.</strong> Pick the format that matches your platform.</li>
-<li><strong>Import and trim your clips.</strong> Keep the first seconds tight and clear.</li>
-<li><strong>Apply your main effects.</strong> Add only what you can repeat consistently.</li>
-<li><strong>Review audio and captions.</strong> Keep captions short and readable.</li>
-<li><strong>Export a test clip.</strong> Check it on a phone before final export.</li>
+<li><strong>Start with the right project preset.</strong> Pick the aspect ratio and frame rate that matches your target platform (e.g., 9:16 for TikTok).</li>
+<li><strong>Import and trim your clips.</strong> Keep the first few seconds tight and visually clear to capture audience attention immediately.</li>
+<li><strong>Apply your main effects or adjustments.</strong> Add only the effects what you need for this specific technique, ensuring you can repeat the process consistently later.</li>
+<li><strong>Review audio and captions.</strong> If using voiceovers or text, keep captions short, readable, and positioned within the safe zones of the screen.</li>
+<li><strong>Export a test clip.</strong> Render the video and check it on an actual phone screen before finalizing your batch or publishing.</li>
 </ol>
+<h2>Platform-specific notes</h2>
+<table><tr><td><strong>Platform</strong></td><td><strong>Action</strong></td></tr><tr><td>Android & iOS</td><td>Use the bottom toolbar to locate standard tools. Long-press clips to rearrange them on the timeline.</td></tr><tr><td>PC (Windows/Mac)</td><td>Take advantage of keyboard shortcuts and the top-right properties panel for finer adjustments.</td></tr></table>
 <h2>Common mistakes to avoid</h2>
 <ul>
-<li>Mixing formats or sizes within one project.</li>
-<li>Overusing effects that slow down exports.</li>
-<li>Skipping a quick preview before publishing.</li>
+<li>Mixing different resolution formats (like 4K and 720p) within one timeline.</li>
+<li>Overusing transitions or heavy effects that unnecessarily slow down the final export.</li>
+<li>Skipping a quick preview and uploading directly to social media with errors.</li>
 </ul>
-<h2>{checklist_title}</h2>
+<h2>Safe setup checklist</h2>
 <ul>
-<li>Confirm your output size and frame rate.</li>
-<li>Keep text inside safe margins.</li>
-<li>Listen with headphones before export.</li>
+<li>Confirm your output size and frame rate match your source footage.</li>
+<li>Keep text and critical visual elements inside the mobile safe margins.</li>
+<li>Listen to the mix with headphones to ensure music doesn't overpower spoken words.</li>
 </ul>
 {internal_links_block}
 <h2>FAQ</h2>
-<h3>What is the fastest way to finish this?</h3>
-<p>Use a simple preset, keep effects minimal, and export a short test clip first.</p>
-<h3>Will this work on Android and iOS?</h3>
-<p>Most steps are the same, but menus can vary by device and app version.</p>
-<h3>How do I keep quality consistent?</h3>
-<p>Stick to one export preset and avoid changing formats mid project.</p>
-<h3>What if it does not look right after export?</h3>
-<p>Re check your size, frame rate, and bitrate, then export a short test clip again.</p>
+<h3>What is the fastest way to master this technique?</h3>
+<p>Use a simple preset to get started, keep your timeline effects minimal, and export a short test clip before attempting complex multi-track edits.</p>
+<h3>Are the CapCut menus the same on Android and iOS?</h3>
+<p>The core features are virtually identical, but menu placements can vary slightly depending on your device's screen size and the current version of the app.</p>
+<h3>How do I keep my video quality consistent?</h3>
+<p>Stick to a single export preset (like 1080p at 60fps) and avoid drastically changing formats or scaling lower-quality footage mid-project.</p>
+<h3>What if the video does not look right after export?</h3>
+<p>Recheck your project resolution, frame rate, and export bitrate settings. Adjust them slightly higher, then export a short test clip again to verify.</p>
 <h2>Conclusion</h2>
-<p>Follow the steps above and keep one reliable preset for steady, repeatable results.</p>
+<p>Follow the steps above to efficiently handle <strong>{html.escape(keyword)}</strong>. By keeping one reliable preset and testing your edits early, you can guarantee steady, professional, and repeatable results in CapCut.</p>
 """
 
     return {

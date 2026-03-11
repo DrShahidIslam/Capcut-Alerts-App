@@ -6,10 +6,18 @@ We keep this intentionally lightweight so the pipeline can always attach *some* 
 
 from __future__ import annotations
 
+import logging
 import re
 import struct
 import zlib
 
+import config
+try:
+    from google import genai
+except Exception:
+    genai = None
+
+logger = logging.getLogger(__name__)
 
 # 5x7 bitmap font for uppercase A-Z, digits, and a few punctuation chars.
 # Each character maps to 7 strings of length 5 using '1' for a filled pixel.
@@ -73,6 +81,35 @@ APP_COLORS = [
     (255, 170, 58),
     (108, 233, 190),
 ]
+
+
+def generate_featured_image(title: str, width: int = 1200, height: int = 630) -> bytes:
+    """Try to generate an AI featured image, falling back to a simple PNG if it fails."""
+    if genai is not None and config.GEMINI_API_KEYS:
+        prompt = (
+            f"A vibrant, high-quality youtube thumbnail background for a video editing tutorial titled '{title}'. "
+            "Modern, clean, gradient abstract background with sleek tech aesthetics. No text, no words, no letters."
+        )
+        for index, api_key in enumerate(config.GEMINI_API_KEYS, start=1):
+            try:
+                client = genai.Client(api_key=api_key)
+                result = client.models.generate_images(
+                    model='imagen-3.0-generate-001',
+                    prompt=prompt,
+                    config=dict(
+                        number_of_images=1,
+                        output_mime_type="image/jpeg",
+                        aspect_ratio="16:9",
+                    )
+                )
+                if result.generated_images:
+                    return result.generated_images[0].image.image_bytes
+            except Exception as exc:
+                logger.warning("Gemini image generation failed for key %s: %s", index, exc, exc_info=True)
+    
+    # Fallback to the programmatic PNG generator
+    logger.info("Falling back to programmatic PNG featured image")
+    return render_featured_image_png(title, width, height)
 
 
 def render_featured_image_png(title: str, width: int = 1200, height: int = 630) -> bytes:

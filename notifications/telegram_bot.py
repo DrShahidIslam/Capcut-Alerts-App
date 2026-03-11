@@ -51,6 +51,10 @@ def send_article_preview(article: dict) -> int | None:
         ]
     }
     preview = _plain_preview(article["content"])
+    fallback_warning = ""
+    if article.get("is_fallback"):
+        fallback_warning = "\n\n⚠️ **[TEMPLATE FALLBACK]** Gemini generation failed. Using generic template."
+
     text = (
         "CapCut article ready for review\n"
         "------------------------------\n"
@@ -60,7 +64,7 @@ def send_article_preview(article: dict) -> int | None:
         f"Words: {article['word_count']}\n"
         f"Meta description: {article['meta_description']}\n"
         f"Focus keywords: {', '.join(article.get('focus_keywords', []))}\n"
-        f"FAQ schema: {article.get('faq_count', 0)} items\n\n"
+        f"FAQ schema: {article.get('faq_count', 0)} items{fallback_warning}\n\n"
         f"{preview}"
     )
     return _send_message(text[:3900], reply_markup=keyboard)

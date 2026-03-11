@@ -1,4 +1,4 @@
-﻿"""WordPress publishing helpers.
+"""WordPress publishing helpers.
 
 This module publishes generated articles and attempts to populate:
 - Category (default: Blog)
@@ -22,9 +22,9 @@ import config
 logger = logging.getLogger(__name__)
 
 try:
-    from publisher.featured_image import render_featured_image_png
+    from publisher.featured_image import generate_featured_image
 except Exception:  # pragma: no cover
-    render_featured_image_png = None
+    generate_featured_image = None
 
 
 _CATEGORY_CACHE: dict[str, int] = {}
@@ -42,14 +42,22 @@ def create_post(article: dict, status: str | None = None) -> dict | None:
             categories = [category_id]
 
     featured_media: int | None = None
-    if config.WP_UPLOAD_FEATURED_IMAGE and render_featured_image_png is not None:
+    if config.WP_UPLOAD_FEATURED_IMAGE and generate_featured_image is not None:
         try:
-            png_bytes = render_featured_image_png(article.get("title") or article.get("meta_title") or "CapCut Guide")
-            filename = f"{article.get('slug') or 'capcut-guide'}-featured.png"
+            image_bytes = generate_featured_image(article.get("title") or article.get("meta_title") or "CapCut Guide")
+            
+            # Imagen returns JPEG, fallback PNG returns PNG. We can sniff the header to be safe, 
+            # but WordPress usually handles the mime type mapping itself on upload if the extension is vague.
+            # To be precise, let's check the magic bytes.
+            is_png = image_bytes.startswith(b"\x89PNG")
+            ext = "png" if is_png else "jpg"
+            mime = "image/png" if is_png else "image/jpeg"
+
+            filename = f"{article.get('slug') or 'capcut-guide'}-featured.{ext}"
             media = upload_media(
                 filename=filename,
-                content_bytes=png_bytes,
-                mime_type="image/png",
+                content_bytes=image_bytes,
+                mime_type=mime,
                 title=article.get("title") or "Featured image",
                 alt_text=article.get("title") or "Featured image",
             )
