@@ -1,4 +1,4 @@
-﻿"""
+"""
 Central configuration for the CapCut content pipeline.
 """
 from __future__ import annotations
@@ -75,9 +75,33 @@ KEYWORD_EXPANSION_TERMS = [
     "remove background",
     "slow motion",
     "text effects",
+    # --- New expansion terms for broader coverage ---
+    "green screen",
+    "keyframes",
+    "speed ramp",
+    "overlay",
+    "chroma key",
+    "voice over",
+    "text to speech",
+    "upscale",
+    "resize",
+    "crop",
+    "slideshow",
+    "subtitle",
+    "music",
+    "transition",
+    "split",
+    "merge",
+    "reverse",
+    "zoom",
+    "pan",
+    "cinematic",
+    "blur",
+    "stabilize",
 ]
 
 SEED_TOPICS = [
+    # --- Original seed topics ---
     "capcut pro apk download",
     "capcut for pc",
     "capcut vs canva",
@@ -100,6 +124,80 @@ SEED_TOPICS = [
     "capcut best settings",
     "capcut transitions guide",
     "capcut text animation guide",
+    # --- Platform-specific topics ---
+    "capcut for pc download",
+    "capcut for ios",
+    "capcut online editor",
+    "capcut web version",
+    "capcut for mac",
+    "capcut for chromebook",
+    # --- Template & trend topics ---
+    "capcut trending templates 2026",
+    "capcut velocity template",
+    "capcut slow motion template",
+    "capcut photo editing template",
+    "capcut aesthetic edit template",
+    # --- AI feature topics ---
+    "capcut ai remove background",
+    "capcut ai upscale",
+    "capcut text to speech",
+    "capcut ai voice changer",
+    "capcut ai image enhancer",
+    # --- How-to tutorials ---
+    "how to add music in capcut",
+    "how to add subtitles in capcut",
+    "how to speed up video in capcut",
+    "how to use green screen in capcut",
+    "how to make a slideshow in capcut",
+    "how to resize video in capcut",
+    "how to crop video in capcut",
+    "how to add transitions in capcut",
+    "how to use keyframes in capcut",
+    "how to split video in capcut",
+    "how to reverse video in capcut",
+    "how to blur background in capcut",
+    "how to stabilize video in capcut",
+    "how to add voice over in capcut",
+    "how to do slow motion in capcut",
+    "how to remove audio in capcut",
+    "how to merge videos in capcut",
+    "how to add text in capcut",
+    "how to zoom in capcut",
+    "how to do speed ramp in capcut",
+    # --- Fix / troubleshoot topics ---
+    "capcut crashing fix",
+    "capcut export failed fix",
+    "capcut audio sync problem",
+    "capcut video quality loss fix",
+    "capcut app not opening fix",
+    "capcut keeps freezing fix",
+    # --- Download / APK topics ---
+    "capcut mod apk latest version",
+    "capcut apk for android",
+    "capcut lite version",
+    "capcut apk without watermark",
+    # --- Alternatives topics ---
+    "best capcut alternatives",
+    "capcut alternatives for pc",
+    "free video editors like capcut",
+    "capcut alternatives in banned countries",
+    # --- Update / changelog topics ---
+    "capcut new update features",
+    "capcut latest version changelog",
+    "capcut new effects 2026",
+    # --- Regional / ban topics ---
+    "capcut banned countries list",
+    "how to use capcut with vpn",
+    "is capcut safe to use",
+    # --- Comparison topics (new matchups) ---
+    "capcut vs imovie",
+    "capcut vs davinci resolve",
+    "capcut vs powerdirector",
+    "capcut vs vivavideo",
+    "capcut vs splice",
+    "capcut vs adobe express",
+    "capcut vs picsart",
+    "capcut vs lumafusion",
 ]
 
 COMPARISON_TARGETS = [
@@ -110,13 +208,51 @@ COMPARISON_TARGETS = [
     "Alight Motion",
     "Premiere Rush",
     "Filmora",
+    "iMovie",
+    "DaVinci Resolve",
+    "PowerDirector",
+    "VivaVideo",
+    "Splice",
+    "Adobe Express",
+    "Picsart",
+    "LumaFusion",
 ]
 
 COMPETITOR_SITEMAPS = [
     "https://capcutmodapk.id/sitemap_index.xml",
     "https://capcutapkpro.com/post-sitemap.xml",
     "https://capcutdownload.net/post-sitemap.xml",
+    "https://modcombo.com/post-sitemap.xml",
+    "https://apkdone.com/post-sitemap.xml",
 ]
+
+# All content bucket types the pipeline recognises.
+CONTENT_BUCKETS = [
+    "comparison",
+    "how_to",
+    "fix",
+    "trend",
+    "safety",
+    "download",
+    "tutorial",
+    "alternative",
+    "platform",
+    "update",
+]
+
+# Map each bucket to the primary schema types the article should carry.
+ARTICLE_SCHEMA_TYPES = {
+    "how_to":    ["Article", "HowTo", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "fix":       ["Article", "HowTo", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "tutorial":  ["Article", "HowTo", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "comparison":["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "download":  ["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "safety":    ["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "trend":     ["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "alternative":["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "platform":  ["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+    "update":    ["Article", "SoftwareApplication", "BreadcrumbList", "FAQPage"],
+}
 
 RSS_FEEDS = [
     "https://news.google.com/rss/search?q=CapCut&hl=en-US&gl=US&ceid=US:en",
@@ -167,4 +303,8 @@ STRATEGIC_BUCKET_BOOSTS = {
     "trend": 12,
     "download": 8,
     "safety": 10,
+    "tutorial": 15,
+    "alternative": 14,
+    "platform": 12,
+    "update": 10,
 }

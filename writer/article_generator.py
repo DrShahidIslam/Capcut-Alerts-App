@@ -64,7 +64,7 @@ def build_article_prompt(opportunity: dict, internal_links: list[dict]) -> str:
     return f"""
 You are writing for {config.SITE_NAME}, a niche blog about CapCut and CapCut Pro APK topics.
 
-Write a complete article in clean HTML that is optimized for SEO, AEO, and GEO.
+Write a complete article in clean HTML that is optimized for SEO, AEO (Answer Engine Optimization), and GEO (Generative Engine Optimization).
 
 Requirements:
 - Focus keyword: {opportunity['query']}
@@ -72,11 +72,33 @@ Requirements:
 - Article type: {opportunity['bucket']}
 - Tone: {config.ARTICLE_TONE}
 - Length: {config.ARTICLE_MIN_WORDS}-{config.ARTICLE_MAX_WORDS} words
-- Start with a direct answer summary in the first 2 paragraphs.
-- Use clear entities, practical steps, and honest trade offs so the article can be cited by AI overviews.
-- Include a concise "Key takeaways" list near the top.
 
-- Include a concrete workflow checklist list the reader can follow today.
+Entity-First Requirements (critical for AEO/GEO):
+- In the FIRST paragraph, explicitly establish the core entities:
+  - CapCut (App / Video Editor), developed by ByteDance
+  - Platforms: Android, iOS, PC (Windows/Mac), Web
+  - Category: Multimedia / Video Editing
+- Reference these entities naturally throughout the article so AI systems can build entity graphs.
+
+AEO (AI Overview / SGE Citation):
+- Start with a "Direct Answer" paragraph (2-3 sentences) that concisely answers the primary search query in clear, factual language that AI systems can quote directly.
+- Structure H2 headings as question-form headings when natural (e.g. "Why does CapCut crash?" instead of "Crash reasons").
+- Use clear, citable statements with specific details (version numbers, dates, exact steps).
+
+GEO (Generative Engine Optimization):
+- Mention regional availability where relevant (e.g. CapCut restrictions in India, US TikTok ban implications).
+- Include device and OS-specific instructions when applicable.
+- Reference official sources (CapCut official site, app store listings) for citation authority.
+- Add statistics or usage data where available to increase citation probability.
+
+Engagement Hooks:
+- Use specific numbers in titles when relevant ("7 Ways...", "2026 Guide").
+- Add bracket elements like "[Step-by-Step]", "[With Screenshots]", "[Updated 2026]".
+- Use power words in meta descriptions (e.g. proven, instant, essential, ultimate).
+
+Content Structure:
+- Include a concise "Key takeaways" list near the top.
+- Include a concrete workflow checklist the reader can follow today.
 - Cover beginner intent first, then advanced considerations.
 - Mention risks or limitations honestly.
 - Follow these bucket specific requirements:
@@ -96,7 +118,7 @@ title, meta_title, meta_description, excerpt, focus_keywords, content
 
 Field rules:
 - meta_title: max 60 characters and click worthy.
-- meta_description: 140 to 155 characters.
+- meta_description: 140 to 155 characters with a power word and implicit CTA.
 - focus_keywords: JSON array of 4 to 6 keyword phrases.
 - content: valid HTML only, with no markdown fences.
 
@@ -135,6 +157,31 @@ def _bucket_prompt_requirements(bucket: str, query: str) -> str:
 - Include how to recreate the trend safely in CapCut.
 - Add a quick checklist for execution.
 """
+    if bucket == "tutorial":
+        return """- Use a step by step numbered guide with clear instructions per step.
+- Cover beginner intent first, then advanced tips.
+- Add a common mistakes section with solutions.
+- Include a quick reference checklist at the end.
+- Mention which CapCut version and platform each step applies to.
+"""
+    if bucket == "alternative":
+        return """- Include a feature comparison table (columns: App, Best For, Price, Platforms, Key Feature).
+- Add pricing information for each alternative.
+- Include a best for whom recommendation per alternative.
+- Mention which alternatives work in countries where CapCut is banned.
+"""
+    if bucket == "platform":
+        return """- Include platform-specific system requirements.
+- Add step by step setup for the specific platform.
+- Note feature differences between platforms.
+- Include compatibility notes and known limitations.
+"""
+    if bucket == "update":
+        return """- List what is new in the update with specific features.
+- Include how to update step by step.
+- Add before and after feature changes where relevant.
+- Mention if the update fixes known bugs.
+"""
     return """- Use a clear step by step guide.
 - Add common mistakes and how to avoid them.
 - Include a short checklist for consistent results.
@@ -157,6 +204,14 @@ def _default_meta_description(title: str, bucket: str) -> str:
         return f"{title} with clear safety guidance, risk factors, and safer alternatives."
     if bucket == "trend":
         return f"{title} explained with what the trend is, how to recreate it, and quick execution tips."
+    if bucket == "tutorial":
+        return f"{title} with proven step by step instructions, common mistakes to avoid, and beginner tips."
+    if bucket == "alternative":
+        return f"{title} with honest feature comparisons, pricing details, and best for whom recommendations."
+    if bucket == "platform":
+        return f"{title} with system requirements, setup steps, and platform specific tips for CapCut users."
+    if bucket == "update":
+        return f"{title} with what is new, how to update, and essential changes you need to know."
     return f"{title} with quick answers, practical steps, FAQs, and internal links for CapCut users."
 
 
@@ -239,6 +294,14 @@ def _parse_comparison_entities(query: str) -> list[str]:
         "alight motion": "Alight Motion",
         "premiere rush": "Premiere Rush",
         "filmora": "Filmora",
+        "imovie": "iMovie",
+        "davinci resolve": "DaVinci Resolve",
+        "powerdirector": "PowerDirector",
+        "vivavideo": "VivaVideo",
+        "splice": "Splice",
+        "adobe express": "Adobe Express",
+        "picsart": "Picsart",
+        "lumafusion": "LumaFusion",
     }
 
     cleaned: list[str] = []
@@ -270,6 +333,14 @@ def _build_template_article(opportunity: dict, internal_links: list[dict]) -> di
         return _build_comparison_template(opportunity, internal_links)
     if bucket == "fix":
         return _build_fix_template(opportunity, internal_links)
+    if bucket == "tutorial":
+        return _build_tutorial_template(opportunity, internal_links)
+    if bucket == "alternative":
+        return _build_alternative_template(opportunity, internal_links)
+    if bucket == "platform":
+        return _build_platform_template(opportunity, internal_links)
+    if bucket == "update":
+        return _build_update_template(opportunity, internal_links)
     return _build_generic_template(opportunity, internal_links)
 
 def _build_comparison_template(opportunity: dict, internal_links: list[dict]) -> dict:
@@ -622,6 +693,352 @@ def _build_generic_template(opportunity: dict, internal_links: list[dict]) -> di
         "focus_keywords": focus_keywords,
         "content": _cleanup_html(content),
     }
+
+
+def _build_tutorial_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "tutorial"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong>, developed by ByteDance, is a free video editing app available on Android, iOS, PC (Windows and Mac), and Web. <strong>{html.escape(keyword)}</strong> is one of the most searched CapCut tutorials for beginners and intermediate users alike.</p>
+<h2>Direct answer</h2>
+<p>{html.escape(keyword).title()} in CapCut is straightforward once you know where the tools are. Follow the numbered steps below, which work on both mobile and desktop versions of CapCut.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>This tutorial works on CapCut for Android, iOS, and PC.</li>
+<li>Follow the steps in order for the best results.</li>
+<li>Test with a short clip before applying to your full project.</li>
+<li>Common mistakes are covered at the end so you can avoid them.</li>
+</ul>
+<h2>Step by step tutorial</h2>
+<ol>
+<li><strong>Open CapCut and create a new project.</strong> Tap the plus icon on the home screen and import your video clip.</li>
+<li><strong>Navigate to the right tool.</strong> Find the relevant tool in the bottom toolbar or effects panel.</li>
+<li><strong>Apply the effect or adjustment.</strong> Follow any on screen prompts and adjust the settings to match your needs.</li>
+<li><strong>Preview your changes.</strong> Play the timeline to check the result looks correct.</li>
+<li><strong>Fine tune if needed.</strong> Adjust intensity, timing, or position until you are satisfied with the output.</li>
+<li><strong>Export your video.</strong> Use 1080p at 30fps as the safe default for most social platforms.</li>
+</ol>
+<h2>Platform specific notes</h2>
+<table>
+<tr><td><strong>Platform</strong></td><td><strong>Notes</strong></td></tr>
+<tr><td>Android</td><td>Most features available in the latest version from Play Store.</td></tr>
+<tr><td>iOS</td><td>Same feature set as Android with minor UI differences.</td></tr>
+<tr><td>PC (Windows/Mac)</td><td>More screen space makes precise edits easier. Some advanced features are PC only.</td></tr>
+<tr><td>Web</td><td>Limited feature set compared to the desktop app. Best for quick edits.</td></tr>
+</table>
+<h2>Common mistakes to avoid</h2>
+<ul>
+<li>Skipping the preview step and exporting with errors.</li>
+<li>Using the wrong export resolution for your target platform.</li>
+<li>Not updating CapCut, which can cause missing features or bugs.</li>
+<li>Applying too many effects at once, which slows rendering.</li>
+</ul>
+<h2>Quick reference checklist</h2>
+<ul>
+<li>Import your clip and set the correct aspect ratio.</li>
+<li>Apply the main effect or adjustment.</li>
+<li>Preview on the timeline.</li>
+<li>Export at 1080p, 30fps for social media.</li>
+<li>Check the result on your phone before publishing.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Does this work on CapCut for PC?</h3>
+<p>Yes, the steps are similar on PC. The toolbar layout may differ slightly but the same tools are available.</p>
+<h3>What CapCut version do I need?</h3>
+<p>Use the latest version from the official app store or capcut.com for access to all features mentioned in this tutorial.</p>
+<h3>Can I undo changes if something goes wrong?</h3>
+<p>Yes, CapCut has an undo button. You can also tap the history icon to revert multiple steps.</p>
+<h3>What is the best export quality for social media?</h3>
+<p>1080p at 30fps with high bitrate works for most platforms including TikTok, Instagram Reels, and YouTube Shorts.</p>
+<h2>Conclusion</h2>
+<p>Follow the steps above to complete {html.escape(keyword)} in CapCut quickly and reliably. Start with a short test clip, confirm the result, then apply to your full project for consistent quality.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with proven step by step instructions and beginner tips for CapCut users."
+        ),
+        "excerpt": f"Step by step tutorial for {keyword} in CapCut with beginner tips and common mistakes to avoid.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+
+def _build_alternative_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "alternative"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong>, developed by ByteDance, is one of the most popular free video editors available on Android, iOS, PC, and Web. However, users in some regions or those needing specific features often search for <strong>{html.escape(keyword)}</strong> to find the right tool for their workflow.</p>
+<h2>Direct answer</h2>
+<p>The best CapCut alternatives depend on your needs: InShot for simple mobile edits, DaVinci Resolve for professional desktop editing, Canva for design first workflows, and KineMaster for advanced mobile editing. All options below are available in countries where CapCut may be restricted.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>No single alternative replaces every CapCut feature perfectly.</li>
+<li>Choose based on your primary platform (mobile vs desktop) and editing complexity.</li>
+<li>Several alternatives work in countries where CapCut is banned or restricted.</li>
+<li>Free options exist for every use case, though some have premium tiers.</li>
+</ul>
+<h2>Feature comparison table</h2>
+<table>
+<tr><td><strong>App</strong></td><td><strong>Best For</strong></td><td><strong>Price</strong></td><td><strong>Platforms</strong></td><td><strong>Key Feature</strong></td></tr>
+<tr><td>InShot</td><td>Quick mobile edits</td><td>Free (Pro available)</td><td>Android, iOS</td><td>Simple trimming and filters</td></tr>
+<tr><td>KineMaster</td><td>Advanced mobile editing</td><td>Free (Premium available)</td><td>Android, iOS</td><td>Multi layer editing on mobile</td></tr>
+<tr><td>DaVinci Resolve</td><td>Professional desktop editing</td><td>Free (Studio available)</td><td>Windows, Mac, Linux</td><td>Industry grade color correction</td></tr>
+<tr><td>Canva</td><td>Design first video content</td><td>Free (Pro available)</td><td>Web, Android, iOS</td><td>Templates and brand kits</td></tr>
+<tr><td>VN</td><td>Lightweight desktop and mobile</td><td>Free</td><td>Android, iOS, Windows, Mac</td><td>Clean timeline editing</td></tr>
+<tr><td>Filmora</td><td>Beginner desktop editing</td><td>Free trial (Paid plans)</td><td>Windows, Mac</td><td>Drag and drop simplicity</td></tr>
+<tr><td>iMovie</td><td>Apple ecosystem users</td><td>Free</td><td>Mac, iOS</td><td>Seamless Apple integration</td></tr>
+<tr><td>Adobe Express</td><td>Quick social media content</td><td>Free (Premium available)</td><td>Web, Android, iOS</td><td>Adobe asset library access</td></tr>
+</table>
+<h2>Which alternative is best for you?</h2>
+<ul>
+<li><strong>Quick social media edits on phone:</strong> InShot or VN for speed and simplicity.</li>
+<li><strong>Professional or long form editing:</strong> DaVinci Resolve for free, Filmora for an easier learning curve.</li>
+<li><strong>Design and branding focus:</strong> Canva for templates and team collaboration.</li>
+<li><strong>CapCut banned in your country:</strong> InShot, VN, and KineMaster are widely available alternatives.</li>
+<li><strong>Apple users:</strong> iMovie integrates seamlessly with the Apple ecosystem at no cost.</li>
+</ul>
+<h2>Alternatives that work where CapCut is banned</h2>
+<p>In countries where CapCut is restricted (including India and potentially the US due to TikTok related regulations), these alternatives are fully available: InShot, KineMaster, DaVinci Resolve, Canva, VN, Filmora, iMovie, and Adobe Express.</p>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Is there a free alternative to CapCut with no watermark?</h3>
+<p>VN and DaVinci Resolve both offer watermark free exports on their free plans.</p>
+<h3>Which CapCut alternative has the best templates?</h3>
+<p>Canva has the largest template library, while InShot offers good template options for mobile users.</p>
+<h3>Can I use these alternatives on PC?</h3>
+<p>DaVinci Resolve, Filmora, VN, and Canva (web) all work on desktop computers.</p>
+<h3>What is the closest alternative to CapCut overall?</h3>
+<p>VN is the closest in terms of free features and clean interface. InShot is the closest for mobile only editing.</p>
+<h2>Conclusion</h2>
+<p>The right CapCut alternative depends on your platform, budget, and editing complexity. Try InShot or VN for mobile, DaVinci Resolve for desktop power, or Canva for design focused content.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with honest feature comparisons, pricing details, and best for whom recommendations."
+        ),
+        "excerpt": f"Explore the best alternatives to CapCut with feature comparisons, pricing, and recommendations.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+
+def _build_platform_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "platform"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong> is a free video editing application developed by ByteDance, available across multiple platforms including Android, iOS, Windows, Mac, and Web. <strong>{html.escape(keyword)}</strong> covers everything you need to know about using CapCut on your specific device.</p>
+<h2>Direct answer</h2>
+<p>CapCut is available on Android (Google Play Store), iOS (App Store), Windows and Mac (capcut.com), and as a web editor (capcut.com/editor). Features vary by platform, with the desktop version offering the most complete editing toolkit.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>CapCut desktop (PC/Mac) has the most features, including advanced keyframes and effects.</li>
+<li>Mobile versions (Android/iOS) are best for quick edits and social media content.</li>
+<li>The web version is limited but useful for basic edits without installing anything.</li>
+<li>Some features are platform exclusive, check the comparison table below.</li>
+</ul>
+<h2>System requirements</h2>
+<table>
+<tr><td><strong>Platform</strong></td><td><strong>Minimum Requirements</strong></td><td><strong>Download Source</strong></td></tr>
+<tr><td>Android</td><td>Android 5.0+, 2GB RAM</td><td>Google Play Store</td></tr>
+<tr><td>iOS</td><td>iOS 11.0+, iPhone 7 or later</td><td>Apple App Store</td></tr>
+<tr><td>Windows</td><td>Windows 10 64 bit, 4GB RAM, 2GB disk space</td><td>capcut.com</td></tr>
+<tr><td>Mac</td><td>macOS 10.15+, 4GB RAM</td><td>capcut.com</td></tr>
+<tr><td>Web</td><td>Modern browser (Chrome, Edge, Firefox)</td><td>capcut.com/editor</td></tr>
+</table>
+<h2>Feature differences by platform</h2>
+<table>
+<tr><td><strong>Feature</strong></td><td><strong>Mobile</strong></td><td><strong>Desktop</strong></td><td><strong>Web</strong></td></tr>
+<tr><td>Timeline editing</td><td>Basic</td><td>Advanced with multi track</td><td>Basic</td></tr>
+<tr><td>Keyframes</td><td>Limited</td><td>Full support</td><td>Limited</td></tr>
+<tr><td>Auto captions</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Green screen</td><td>Yes</td><td>Yes</td><td>No</td></tr>
+<tr><td>Text to speech</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Export quality</td><td>Up to 4K</td><td>Up to 4K</td><td>Up to 1080p</td></tr>
+</table>
+<h2>How to set up CapCut on your platform</h2>
+<ol>
+<li><strong>Download from the official source.</strong> Use the links above for your platform to avoid unofficial builds.</li>
+<li><strong>Install and open the app.</strong> Follow the on screen setup prompts.</li>
+<li><strong>Sign in (optional).</strong> Signing in enables cloud sync and template access.</li>
+<li><strong>Set your default export settings.</strong> Choose 1080p at 30fps as a safe default.</li>
+<li><strong>Create your first project.</strong> Import media and start editing.</li>
+</ol>
+<h2>Known limitations</h2>
+<ul>
+<li>Web editor lacks green screen, advanced effects, and high resolution exports.</li>
+<li>Mobile versions may struggle with complex multi track projects.</li>
+<li>CapCut may not be available in all regions due to local restrictions.</li>
+</ul>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Is CapCut for PC free?</h3>
+<p>Yes, CapCut desktop is free to download and use from the official website capcut.com.</p>
+<h3>Can I sync projects between mobile and desktop?</h3>
+<p>Yes, if you sign in with the same account. Cloud sync allows you to start on mobile and continue on desktop.</p>
+<h3>Which platform has the best CapCut experience?</h3>
+<p>Desktop (Windows/Mac) offers the most features and screen space. Mobile is best for quick edits on the go.</p>
+<h3>Is CapCut available as a web app?</h3>
+<p>Yes, visit capcut.com/editor to use the web version. Features are more limited compared to the desktop app.</p>
+<h2>Conclusion</h2>
+<p>CapCut works across all major platforms with slightly different feature sets. Choose desktop for maximum editing power, mobile for convenience, and web for quick edits without installation.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with system requirements, setup steps, and platform specific tips for CapCut users."
+        ),
+        "excerpt": f"Complete platform guide for {keyword} including setup, features, and compatibility.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+
+def _build_update_template(opportunity: dict, internal_links: list[dict]) -> dict:
+    keyword = opportunity["query"]
+    title = opportunity["title"]
+    bucket = "update"
+    focus_keywords = _default_focus_keywords(keyword, bucket)
+
+    link_1 = _link_html(internal_links[0]) if len(internal_links) > 0 else ""
+    link_2 = _link_html(internal_links[1]) if len(internal_links) > 1 else ""
+    link_3 = _link_html(internal_links[2]) if len(internal_links) > 2 else ""
+
+    internal_links_block = ""
+    if link_1 or link_2 or link_3:
+        bits = []
+        if link_1:
+            bits.append(f"<li>{link_1}</li>")
+        if link_2:
+            bits.append(f"<li>{link_2}</li>")
+        if link_3:
+            bits.append(f"<li>{link_3}</li>")
+        internal_links_block = f"<h2>Related CapCut guides</h2><ul>{''.join(bits)}</ul>"
+
+    content = f"""
+<p><strong>CapCut</strong>, the free video editing app by ByteDance, regularly receives updates with new features, effects, and bug fixes across Android, iOS, and PC. <strong>{html.escape(keyword)}</strong> covers everything that changed in the latest release.</p>
+<h2>Direct answer</h2>
+<p>The latest CapCut update introduces new effects, performance improvements, and bug fixes. Update through your platform's official app store or capcut.com to get the newest features.</p>
+<h2>Key takeaways</h2>
+<ul>
+<li>Always update CapCut from official sources (Play Store, App Store, or capcut.com).</li>
+<li>New updates often include AI features, effects packs, and stability improvements.</li>
+<li>Some features roll out to specific platforms first before reaching all devices.</li>
+<li>Back up your projects before updating to avoid any compatibility issues.</li>
+</ul>
+<h2>What is new in this update</h2>
+<ul>
+<li><strong>New effects and filters:</strong> Additional creative effects and filters for trending content styles.</li>
+<li><strong>AI feature improvements:</strong> Enhanced auto captions, background removal, and AI upscaling accuracy.</li>
+<li><strong>Performance fixes:</strong> Faster export times and reduced lag on older devices.</li>
+<li><strong>Bug fixes:</strong> Resolved known issues with audio sync, black screen errors, and export failures.</li>
+<li><strong>UI improvements:</strong> Cleaner interface with better tool organization.</li>
+</ul>
+<h2>How to update CapCut</h2>
+<ol>
+<li><strong>Android:</strong> Open Google Play Store, search for CapCut, and tap Update.</li>
+<li><strong>iOS:</strong> Open App Store, go to your profile, find CapCut, and tap Update.</li>
+<li><strong>PC (Windows/Mac):</strong> Visit capcut.com and download the latest installer, or use the in app update prompt.</li>
+<li><strong>Verify the version:</strong> Open CapCut, go to Settings, and check the version number matches the latest release.</li>
+</ol>
+<h2>Before and after this update</h2>
+<table>
+<tr><td><strong>Feature</strong></td><td><strong>Before</strong></td><td><strong>After</strong></td></tr>
+<tr><td>Auto captions</td><td>Basic accuracy</td><td>Improved AI accuracy with better punctuation</td></tr>
+<tr><td>Export speed</td><td>Standard processing</td><td>Faster rendering on supported devices</td></tr>
+<tr><td>Effects library</td><td>Previous collection</td><td>Expanded with new trending effects</td></tr>
+<tr><td>Stability</td><td>Occasional crashes on complex projects</td><td>Improved memory management</td></tr>
+</table>
+<h2>Should you update?</h2>
+<p>Yes. CapCut updates are free and typically improve stability. If you are experiencing crashes, export errors, or missing features, updating is the first troubleshooting step.</p>
+{internal_links_block}
+<h2>FAQ</h2>
+<h3>Will updating CapCut delete my projects?</h3>
+<p>No, updating preserves your existing projects. However, backing up important exports before any update is a good practice.</p>
+<h3>Can I go back to the old version?</h3>
+<p>Official app stores do not support version rollback. Sideloading old versions is not recommended due to security risks.</p>
+<h3>Why is the update not showing for me?</h3>
+<p>Updates may roll out gradually by region. Check again in a few days or visit the official website for the latest version.</p>
+<h3>Is the update available on all platforms?</h3>
+<p>Most updates eventually reach all platforms, but some features may launch on mobile first before coming to desktop or web.</p>
+<h2>Conclusion</h2>
+<p>Keep CapCut updated to get the latest features, bug fixes, and performance improvements. Update through official channels and back up your projects before major version changes.</p>
+"""
+
+    return {
+        "title": title,
+        "meta_title": _trim_meta(title),
+        "meta_description": _trim_description(
+            f"{title} with what is new, how to update, and essential changes you need to know."
+        ),
+        "excerpt": f"Everything about {keyword} including new features, update steps, and what changed.",
+        "focus_keywords": focus_keywords,
+        "content": _cleanup_html(content),
+    }
+
+
 def _get_apps_for_opportunity(opportunity: dict) -> list[str]:
     bucket = opportunity.get("bucket") or ""
     if bucket == "comparison":
@@ -706,17 +1123,64 @@ def _normalize_article(article: dict, opportunity: dict, internal_links: list[di
             else:
                 content = f"{content}{insert}"
 
+    # --- Schema injection ---
+    bucket = opportunity.get("bucket") or "how_to"
+    title = _sanitize_plain_text((article.get("title") or opportunity["title"]).strip())
+    schema_types = config.ARTICLE_SCHEMA_TYPES.get(bucket, ["Article", "FAQPage"])
+    all_schemas: list[str] = []
+
+    # FAQ schema
     faqs = _extract_faqs_from_html(content)
     faq_schema = _build_faq_schema(faqs) if faqs else ""
-    if faq_schema and "application/ld+json" not in content:
-        content = f"{content}{faq_schema}"
+    if faq_schema:
+        all_schemas.append(faq_schema)
 
-    title = _sanitize_plain_text((article.get("title") or opportunity["title"]).strip())
+    # HowTo schema (for how_to, fix, tutorial buckets)
+    if "HowTo" in schema_types:
+        howto_schema = _build_howto_schema(content, title)
+        if howto_schema:
+            all_schemas.append(howto_schema)
+
+    # Article schema
+    if "Article" in schema_types:
+        meta_desc = _sanitize_plain_text(
+            article.get("meta_description")
+            or _default_meta_description(title, bucket)
+        )
+        article_schema = _build_article_schema(title, meta_desc, opportunity.get("slug") or "")
+        if article_schema:
+            all_schemas.append(article_schema)
+
+    # SoftwareApplication schema
+    if "SoftwareApplication" in schema_types:
+        software_schema = _build_software_schema()
+        if software_schema:
+            all_schemas.append(software_schema)
+
+    # BreadcrumbList schema
+    if "BreadcrumbList" in schema_types:
+        breadcrumb_schema = _build_breadcrumb_schema(title, bucket, opportunity.get("slug") or "")
+        if breadcrumb_schema:
+            all_schemas.append(breadcrumb_schema)
+
+    # Inject all schemas that are not already present
+    if all_schemas and "application/ld+json" not in content:
+        content = f"{content}{''.join(all_schemas)}"
+    elif all_schemas:
+        # Some schemas already present (e.g. from Gemini output); add only missing ones
+        for schema_block in all_schemas:
+            # Extract the @type to check uniqueness
+            type_match = re.search(r'"@type"\s*:\s*"([^"]+)"', schema_block)
+            if type_match:
+                schema_type = type_match.group(1)
+                if f'"@type":"{schema_type}"' not in content.replace(" ", "") and f'"@type": "{schema_type}"' not in content:
+                    content = f"{content}{schema_block}"
+
     meta_title = _trim_meta(_sanitize_plain_text(article.get("meta_title") or article.get("seo_title") or title))
     meta_description = _trim_description(
         _sanitize_plain_text(
             article.get("meta_description")
-            or _default_meta_description(title, opportunity.get("bucket") or "how_to")
+            or _default_meta_description(title, bucket)
         )
     )
     focus_keywords = _normalize_focus_keywords(article.get("focus_keywords"), opportunity)
@@ -822,6 +1286,109 @@ def _build_faq_schema(faqs: list[dict]) -> str:
     return f'<script type="application/ld+json">{json.dumps(payload, ensure_ascii=False)}</script>'
 
 
+def _build_howto_schema(content: str, title: str) -> str:
+    """Extract ordered list steps from content and build HowTo JSON-LD."""
+    steps = []
+    ol_match = re.search(r"<ol>(.*?)</ol>", content, re.DOTALL | re.IGNORECASE)
+    if not ol_match:
+        return ""
+    li_items = re.findall(r"<li>(.*?)</li>", ol_match.group(1), re.DOTALL | re.IGNORECASE)
+    for i, item in enumerate(li_items, 1):
+        step_text = _strip_html(item).strip()
+        if step_text:
+            steps.append({
+                "@type": "HowToStep",
+                "position": i,
+                "name": step_text[:80],
+                "text": step_text,
+            })
+    if not steps:
+        return ""
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": title,
+        "step": steps,
+    }
+    return f'<script type="application/ld+json">{json.dumps(payload, ensure_ascii=False)}</script>'
+
+
+def _build_article_schema(title: str, description: str, slug: str) -> str:
+    """Build Article JSON-LD schema."""
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": title[:110],
+        "description": description[:200],
+        "author": {
+            "@type": "Organization",
+            "name": config.SITE_NAME,
+            "url": config.SITE_URL,
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": config.SITE_NAME,
+            "url": config.SITE_URL,
+        },
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": f"{config.SITE_URL.rstrip('/')}/{slug}/",
+        },
+    }
+    return f'<script type="application/ld+json">{json.dumps(payload, ensure_ascii=False)}</script>'
+
+
+def _build_software_schema() -> str:
+    """Build SoftwareApplication JSON-LD schema for CapCut."""
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "CapCut",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Android, iOS, Windows, macOS, Web",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD",
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "ByteDance",
+        },
+    }
+    return f'<script type="application/ld+json">{json.dumps(payload, ensure_ascii=False)}</script>'
+
+
+def _build_breadcrumb_schema(title: str, bucket: str, slug: str) -> str:
+    """Build BreadcrumbList JSON-LD schema."""
+    bucket_label = bucket.replace("_", " ").title()
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": config.SITE_URL,
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": bucket_label,
+                "item": f"{config.SITE_URL.rstrip('/')}/category/{bucket}/",
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": title[:60],
+                "item": f"{config.SITE_URL.rstrip('/')}/{slug}/",
+            },
+        ],
+    }
+    return f'<script type="application/ld+json">{json.dumps(payload, ensure_ascii=False)}</script>'
+
+
 def _normalize_focus_keywords(raw_value: object, opportunity: dict) -> list[str]:
     if isinstance(raw_value, list):
         values = [str(item).strip().lower() for item in raw_value if str(item).strip()]
@@ -843,13 +1410,7 @@ def _normalize_focus_keywords(raw_value: object, opportunity: dict) -> list[str]
     return cleaned
 
 
-def _build_template_article(opportunity: dict, internal_links: list[dict]) -> dict:
-    bucket = opportunity.get("bucket") or "how_to"
-    if bucket == "comparison":
-        return _build_comparison_template(opportunity, internal_links)
-    if bucket == "fix":
-        return _build_fix_template(opportunity, internal_links)
-    return _build_generic_template(opportunity, internal_links)
+
 def _default_focus_keywords(keyword: str, bucket: str) -> list[str]:
     base = keyword.lower().strip()
     variations = [
@@ -864,6 +1425,14 @@ def _default_focus_keywords(keyword: str, bucket: str) -> list[str]:
         variations.append(f"{base} solution")
     elif bucket == "download":
         variations.append(f"{base} latest version")
+    elif bucket == "tutorial":
+        variations.append(f"{base} step by step")
+    elif bucket == "alternative":
+        variations.append(f"{base} free")
+    elif bucket == "platform":
+        variations.append(f"{base} setup")
+    elif bucket == "update":
+        variations.append(f"{base} latest")
     else:
         variations.append(f"best {base}")
     return variations

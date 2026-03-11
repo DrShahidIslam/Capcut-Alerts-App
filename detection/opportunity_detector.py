@@ -11,7 +11,10 @@ from collections import Counter, defaultdict
 import config
 
 
-NON_COMPARISON_BUCKETS = {"how_to", "fix", "trend", "safety", "download"}
+NON_COMPARISON_BUCKETS = {
+    "how_to", "fix", "trend", "safety", "download",
+    "tutorial", "alternative", "platform", "update",
+}
 
 
 def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dict]]) -> list[dict]:
@@ -57,16 +60,24 @@ def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dic
 def suggest_title(query: str, bucket: str) -> str:
     clean = query.strip()
     if bucket == "comparison":
-        return clean.title().replace(" Vs ", " vs ") + ": Which Editor Is Better?"
+        return clean.title().replace(" Vs ", " vs ") + " (2026): Honest Feature Comparison [With Table]"
     if bucket == "fix":
-        return clean.title() + ": Causes and Working Fixes"
+        return clean.title() + ": 5 Working Fixes That Actually Work [2026]"
     if bucket == "trend":
-        return clean.title() + ": What Is Trending Right Now?"
+        return clean.title() + ": Trending Now + How to Use It [2026]"
     if bucket == "safety":
-        return clean.title() + ": Is It Safe, Legal, and Worth It?"
+        return clean.title() + ": Safety, Risks, and What You Need to Know [2026]"
     if bucket == "download":
-        return clean.title() + ": Full Download and Setup Guide"
-    return clean.title() + ": Complete Guide"
+        return clean.title() + ": Safe Download + Install Guide [Latest Version]"
+    if bucket == "tutorial":
+        return "How to " + clean.title() + ": Step by Step Tutorial for Beginners [2026]"
+    if bucket == "alternative":
+        return "Best " + clean.title() + " Alternatives in 2026 [Free and Paid]"
+    if bucket == "platform":
+        return clean.title() + ": Complete Guide for Every Platform [2026]"
+    if bucket == "update":
+        return clean.title() + ": What's New and How to Update [2026]"
+    return "How to " + clean.title() + " in CapCut [Step by Step Guide 2026]"
 
 
 def build_brief(query: str, bucket: str, items: list[dict]) -> str:
@@ -74,7 +85,23 @@ def build_brief(query: str, bucket: str, items: list[dict]) -> str:
     trend = any("rising" in item.get("signals", []) or "fresh-news" in item.get("signals", []) for item in items)
     momentum = any("momentum" in item.get("signals", []) for item in items)
     volume = _aggregate_volume(items)
-    parts = [f"Primary angle: {bucket.replace('_', ' ')}."]
+
+    # Bucket-specific angle descriptions
+    bucket_angles = {
+        "comparison": "Head-to-head feature comparison with decision table.",
+        "how_to": "Step-by-step guide with practical walkthrough.",
+        "fix": "Troubleshooting guide with causes and verified fixes.",
+        "trend": "Trend analysis with recreation steps.",
+        "safety": "Safety and legality analysis with risk factors.",
+        "download": "Safe download and setup walkthrough.",
+        "tutorial": "Beginner-friendly tutorial with numbered steps and common mistakes.",
+        "alternative": "Alternatives roundup with feature comparison table and best-for recommendations.",
+        "platform": "Platform-specific guide with system requirements and compatibility notes.",
+        "update": "Update changelog with what's new, how to update, and before/after changes.",
+    }
+    angle = bucket_angles.get(bucket, f"Primary angle: {bucket.replace('_', ' ')}.")
+    parts = [angle]
+
     if competitor:
         parts.append("Competitors are already covering related demand.")
     if trend:
@@ -172,15 +199,34 @@ def _select_diverse_opportunities(opportunities: list[dict]) -> list[dict]:
 
 def _classify(query: str) -> str:
     lower = query.lower()
+    # Comparison: must check first since "vs" is unambiguous
     if "vs " in lower or "compare" in lower:
         return "comparison"
-    if any(token in lower for token in ("fix", "error", "issue", "problem", "not working", "black screen", "login")):
+    # Fix/troubleshoot
+    if any(token in lower for token in ("fix", "error", "issue", "problem", "not working", "black screen", "login", "crashing", "freezing", "sync problem", "failed")):
         return "fix"
+    # Tutorial: explicit step-by-step how-to queries
+    if re.search(r"\bhow to\b", lower) and any(token in lower for token in ("step", "tutorial", "beginner", "guide")):
+        return "tutorial"
+    if re.search(r"\bhow to\b", lower):
+        return "tutorial"
+    # Alternative: "alternative", "apps like", "editors like"
+    if any(token in lower for token in ("alternative", "apps like", "editors like", "similar to")):
+        return "alternative"
+    # Update / changelog
+    if any(token in lower for token in ("update", "changelog", "new version", "new features", "what's new", "whats new", "new effects")):
+        return "update"
+    # Platform-specific
+    if any(token in lower for token in ("for pc", "for ios", "for mac", "for chromebook", "web version", "online editor", "for android")) and "download" not in lower and "apk" not in lower:
+        return "platform"
+    # Trends
     if any(token in lower for token in ("trend", "trending", "viral", "template")):
         return "trend"
-    if any(token in lower for token in ("safe", "legal", "privacy", "ban")):
+    # Safety
+    if any(token in lower for token in ("safe", "legal", "privacy", "ban", "risk")):
         return "safety"
-    if any(token in lower for token in ("download", "apk", "install", "pc", "ios", "android", "old version")):
+    # Download
+    if any(token in lower for token in ("download", "apk", "install", "old version", "mod", "lite version")):
         return "download"
     return "how_to"
 
@@ -199,3 +245,4 @@ def _slugify(value: str) -> str:
 
 def _topic_key(query: str) -> str:
     return hashlib.md5(query.encode("utf-8")).hexdigest()
+
