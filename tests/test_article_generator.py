@@ -25,3 +25,5 @@ def test_generate_article_adds_seo_fields_and_faq_schema():
     assert article["faq_count"] >= 1
     assert "application/ld+json" in article["faq_schema"]
     assert '<a href="https://capcutpro-apks.com/' in article["content"]
+    assert "source_quality" in article
+    assert "editorial_flags" in article

@@ -10,6 +10,7 @@ import re
 from urllib.parse import urlparse
 
 import config
+from writer.source_fetcher import discover_source_urls, fetch_multiple_sources, summarize_source_quality
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,10 @@ STOPWORDS = {
 
 def generate_article(opportunity: dict, existing_pages: list[dict]) -> dict:
     link_candidates = _select_internal_links(existing_pages, opportunity["query"], limit=6)
-    prompt = build_article_prompt(opportunity, link_candidates)
+    source_urls = discover_source_urls(opportunity)
+    source_texts = fetch_multiple_sources(source_urls, max_sources=config.ARTICLE_MAX_SOURCES)
+    source_quality = summarize_source_quality(source_texts)
+    prompt = build_article_prompt(opportunity, link_candidates, source_texts, source_quality)
     article = _generate_with_gemini(prompt)
     is_fallback = False
     if article is None:
@@ -50,10 +54,19 @@ def generate_article(opportunity: dict, existing_pages: list[dict]) -> dict:
     article["score"] = opportunity["score"]
     article["is_fallback"] = is_fallback
     article["word_count"] = _count_words(_strip_html(article["content"]))
+    article["source_urls"] = source_quality.get("source_urls", [])
+    article["source_quality"] = source_quality
+    article["editorial_flags"] = source_quality.get("flags", [])
+    article["needs_manual_fact_check"] = bool(source_quality.get("needs_manual_fact_check"))
     return article
 
 
-def build_article_prompt(opportunity: dict, internal_links: list[dict]) -> str:
+def build_article_prompt(
+    opportunity: dict,
+    internal_links: list[dict],
+    source_texts: list[dict],
+    source_quality: dict,
+) -> str:
     bucket = opportunity.get("bucket") or "how_to"
     internal_link_lines = [
         {
@@ -64,10 +77,23 @@ def build_article_prompt(opportunity: dict, internal_links: list[dict]) -> str:
         for link in internal_links[:5]
     ]
     bucket_requirements = _bucket_prompt_requirements(bucket, opportunity.get("query") or "")
+    source_blocks = []
+    for index, source in enumerate(source_texts[:5], start=1):
+        source_blocks.append(
+            f"--- SOURCE {index} | {source.get('source_domain', 'unknown')} | {source.get('url', '')} ---\n"
+            f"{source.get('text', '')[:1800]}"
+        )
+    source_material = "\n\n".join(source_blocks) if source_blocks else "No source material was extracted."
+    source_guardrail = (
+        "Source quality warnings: " + " | ".join(source_quality.get("flags", []))
+        if source_quality.get("flags")
+        else "Source quality looks acceptable."
+    )
     return f"""
 You are writing for {config.SITE_NAME}, a niche blog about CapCut and CapCut Pro APK topics.
 
 Write a complete article in clean HTML that is optimized for SEO, AEO (Answer Engine Optimization), and GEO (Generative Engine Optimization).
+Use the extracted source material when stating facts. If the sources are thin, be transparent and keep claims conservative.
 
 Requirements:
 - Focus keyword: {opportunity['query']}
@@ -92,7 +118,7 @@ GEO (Generative Engine Optimization):
 - Mention regional availability where relevant (e.g. CapCut restrictions in India, US TikTok ban implications).
 - Include device and OS-specific instructions when applicable.
 - Reference official sources (CapCut official site, app store listings) for citation authority.
-- Add statistics or usage data where available to increase citation probability.
+- Add statistics or usage data only when they are explicitly present in the sources below.
 
 Engagement Hooks:
 - Use specific numbers in titles when relevant ("7 Ways...", "2026 Guide").
@@ -115,6 +141,9 @@ Content Structure:
 - Make the structure scan friendly with specific H2 headings and short paragraphs.
 - Do not use emojis. Avoid dashes in visible text.
 - Make titles, meta fields, and anchors clear, keyword focused, and click worthy without hype.
+- Do not invent version numbers, release notes, country bans, pricing, or platform limits not supported by the sources.
+- Do not talk about search popularity, rising searches, or "why this is trending" unless that fact is directly sourced and genuinely useful.
+- If the source material is weak or missing, prefer practical guidance and clearly framed limitations over fake certainty.
 
 Return strict JSON with:
 title, meta_title, meta_description, excerpt, focus_keywords, content
@@ -124,6 +153,12 @@ Field rules:
 - meta_description: 140 to 155 characters with a power word and implicit CTA.
 - focus_keywords: JSON array of 4 to 6 keyword phrases.
 - content: valid HTML only, with no markdown fences.
+
+Source material:
+{source_material}
+
+Source quality note:
+{source_guardrail}
 
 Planning brief:
 {opportunity['brief']}
@@ -1346,6 +1381,18 @@ def _normalize_article(article: dict, opportunity: dict, internal_links: list[di
 
     # FAQ schema
     faqs = _extract_faqs_from_html(content)
+    if not faqs:
+        fallback_article = _build_template_article(opportunity, internal_links)
+        fallback_faqs = _extract_faqs_from_html(fallback_article.get("content") or "")
+        if fallback_faqs:
+            faq_heading_match = FAQ_SECTION_PATTERN.search(fallback_article.get("content") or "")
+            if faq_heading_match:
+                faq_block = f"<h2>FAQ</h2>{faq_heading_match.group(1)}"
+                if "<h2>Conclusion</h2>" in content:
+                    content = content.replace("<h2>Conclusion</h2>", f"{faq_block}<h2>Conclusion</h2>", 1)
+                else:
+                    content = f"{content}{faq_block}"
+                faqs = fallback_faqs
     faq_schema = _build_faq_schema(faqs) if faqs else ""
     if faq_schema:
         all_schemas.append(faq_schema)

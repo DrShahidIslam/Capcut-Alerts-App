@@ -53,7 +53,21 @@ def send_article_preview(article: dict) -> int | None:
     preview = _plain_preview(article["content"])
     fallback_warning = ""
     if article.get("is_fallback"):
-        fallback_warning = "\n\n⚠️ **[TEMPLATE FALLBACK]** Gemini generation failed. Using generic template."
+        fallback_warning = "\nLow confidence: template fallback was used."
+
+    quality = article.get("quality_check") or {}
+    issue_line = ""
+    warning_line = ""
+    if quality.get("issues"):
+        issue_line = f"\nBlocking issues: {' | '.join(quality['issues'][:3])}"
+    if quality.get("warnings"):
+        warning_line = f"\nWarnings: {' | '.join(quality['warnings'][:3])}"
+
+    source_quality = article.get("source_quality") or {}
+    source_line = (
+        f"\nSources: {source_quality.get('source_count', 0)} "
+        f"from {source_quality.get('unique_domain_count', 0)} domains"
+    )
 
     text = (
         "CapCut article ready for review\n"
@@ -64,7 +78,11 @@ def send_article_preview(article: dict) -> int | None:
         f"Words: {article['word_count']}\n"
         f"Meta description: {article['meta_description']}\n"
         f"Focus keywords: {', '.join(article.get('focus_keywords', []))}\n"
-        f"FAQ schema: {article.get('faq_count', 0)} items{fallback_warning}\n\n"
+        f"FAQ schema: {article.get('faq_count', 0)} items"
+        f"{source_line}"
+        f"{fallback_warning}"
+        f"{issue_line}"
+        f"{warning_line}\n\n"
         f"{preview}"
     )
     return _send_message(text[:3900], reply_markup=keyboard)

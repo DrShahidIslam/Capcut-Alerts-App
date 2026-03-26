@@ -36,3 +36,15 @@ def test_detector_limits_comparison_topic_dominance():
     assert comparison_count < len(results)
     assert any(item["bucket"] == "fix" for item in results)
     assert any(item["bucket"] == "how_to" for item in results)
+
+
+def test_detector_filters_generic_low_value_trend_queries():
+    existing_slugs = set()
+    bundles = [[
+        {"query": "capcut trending templates 2026", "source": "seed", "signals": ["core-topic"], "freshness": 0.7},
+        {"query": "capcut black screen fix", "source": "seed", "signals": ["core-topic"], "freshness": 0.9},
+    ]]
+    results = detect_opportunities(existing_slugs, bundles)
+    queries = {item["query"] for item in results}
+    assert "capcut trending templates 2026" not in queries
+    assert "capcut black screen fix" in queries

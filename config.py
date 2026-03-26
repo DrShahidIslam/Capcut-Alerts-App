@@ -263,6 +263,20 @@ ARTICLE_MIN_WORDS = int(os.getenv("ARTICLE_MIN_WORDS", "1200"))
 ARTICLE_MAX_WORDS = int(os.getenv("ARTICLE_MAX_WORDS", "2200"))
 ARTICLE_TONE = os.getenv("ARTICLE_TONE", "helpful, practical, and SEO-focused")
 DEFAULT_FOCUS_KEYWORD_COUNT = int(os.getenv("DEFAULT_FOCUS_KEYWORD_COUNT", "5"))
+ARTICLE_MAX_SOURCES = int(os.getenv("ARTICLE_MAX_SOURCES", "5"))
+ARTICLE_MIN_SOURCE_COUNT = int(os.getenv("ARTICLE_MIN_SOURCE_COUNT", "2"))
+ARTICLE_MIN_UNIQUE_SOURCE_DOMAINS = int(os.getenv("ARTICLE_MIN_UNIQUE_SOURCE_DOMAINS", "2"))
+PUBLISH_MIN_WORDS = int(os.getenv("PUBLISH_MIN_WORDS", "900"))
+
+OFFICIAL_SOURCE_URLS = [
+    "https://www.capcut.com/",
+    "https://www.capcut.com/editor",
+    "https://www.capcut.com/tools/auto-caption-generator",
+    "https://www.capcut.com/tools/video-upscaler",
+    "https://www.capcut.com/tools/background-remover",
+    "https://play.google.com/store/apps/details?id=com.lemon.lvoverseas",
+    "https://apps.apple.com/us/app/capcut-video-editor/id1500855883",
+]
 
 REPORTS_DIR = os.getenv("REPORTS_DIR", os.path.join("data", "reports"))
 EXPORTS_DIR = os.getenv("EXPORTS_DIR", os.path.join("data", "exports"))

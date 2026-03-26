@@ -24,6 +24,8 @@ def detect_opportunities(existing_slugs: set[str], source_bundles: list[list[dic
             query = _normalize_query(item.get("query", ""))
             if not query:
                 continue
+            if _is_low_value_query(query):
+                continue
             grouped[_topic_key(query)].append({**item, "query": query})
 
     opportunities = []
@@ -141,9 +143,15 @@ def _score_topic(query: str, items: list[dict], bucket: str) -> int:
         volume_bonus = 4
 
     momentum_bonus = 6 if any("momentum" in item.get("signals", []) for item in items) else 0
+    credibility_penalty = 0
+    signals = {signal for item in items for signal in item.get("signals", [])}
+    if bucket == "trend" and not {"rising", "momentum", "fresh-news", "competitor-covered"} & signals:
+        credibility_penalty += 18
+    if bucket == "download" and any(token in lower for token in ("mod apk", "mod", "apk")):
+        credibility_penalty += 8
 
     strategic = config.STRATEGIC_BUCKET_BOOSTS.get(bucket, 6)
-    return min(base + source_weight + freshness + keyword_bonus + volume_bonus + momentum_bonus + strategic, 100)
+    return min(base + source_weight + freshness + keyword_bonus + volume_bonus + momentum_bonus + strategic - credibility_penalty, 100)
 
 
 def _select_diverse_opportunities(opportunities: list[dict]) -> list[dict]:
@@ -245,4 +253,21 @@ def _slugify(value: str) -> str:
 
 def _topic_key(query: str) -> str:
     return hashlib.md5(query.encode("utf-8")).hexdigest()
+
+
+def _is_low_value_query(query: str) -> bool:
+    lower = query.lower().strip()
+    generic_patterns = (
+        "capcut trending templates",
+        "capcut template trend",
+        "capcut new effects",
+        "capcut latest version changelog",
+    )
+    if lower in generic_patterns:
+        return True
+    if "template" in lower and ("2026" in lower or "trend" in lower) and len(lower.split()) <= 4:
+        return True
+    if lower.startswith("best capcut alternatives"):
+        return True
+    return False
 

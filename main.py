@@ -54,6 +54,7 @@ from sources.seed_monitor import fetch_seed_topics
 from sources.site_inventory import fetch_existing_site_pages
 from sources.trend_monitor import fetch_trend_topics
 from writer.article_generator import generate_article, get_generation_health
+from writer.quality_gate import validate_article_for_publish
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "pending_state.json")
 
@@ -198,8 +199,11 @@ def _handle_generate(topic_key: str) -> None:
         conn.close()
         return
     article = generate_article(opportunity, existing_pages)
-    save_generated_article(conn, topic_key, article, status="pending")
-    update_opportunity_status(conn, topic_key, "pending")
+    quality = validate_article_for_publish(article)
+    draft_status = "pending" if quality["ok"] else "review_needed"
+    article["quality_check"] = quality
+    save_generated_article(conn, topic_key, article, status=draft_status)
+    update_opportunity_status(conn, topic_key, draft_status)
     _save_pending_state(article)
     send_article_preview(article)
     conn.close()
@@ -210,6 +214,17 @@ def _handle_publish(topic_key: str, status: str) -> None:
     article = get_generated_article(conn, topic_key)
     if not article:
         send_status("No generated article was found for this topic.")
+        conn.close()
+        return
+    quality = validate_article_for_publish(article)
+    if not quality["ok"]:
+        article["quality_check"] = quality
+        save_generated_article(conn, topic_key, article, status="review_needed")
+        update_opportunity_status(conn, topic_key, "review_needed")
+        send_status(
+            "Publish blocked by quality gate for "
+            f"{article['title']}. Issues: {' | '.join(quality['issues'][:4])}"
+        )
         conn.close()
         return
     result = create_post(article, status=status)
